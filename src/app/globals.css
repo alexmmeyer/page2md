@@ -278,6 +278,19 @@ a:visited {
   overflow: auto;
 }
 
+.previewWrapFill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.previewWrapFill pre {
+  flex: 1;
+  height: 100%;
+  max-height: none;
+  overflow: auto;
+}
+
 .previewWrap pre,
 .previewWrap code {
   max-width: 100%;

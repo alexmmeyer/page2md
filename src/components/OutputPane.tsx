@@ -57,8 +57,15 @@ export function OutputPane({
   const previewValue = preview.value;
   const language = preview.language;
   const hasPreview = previewValue.trim().length > 0;
-  const showCounts = Boolean(report && outputSourceType === "url");
+  const showCounts = Boolean(
+    report &&
+      outputSourceType === "url" &&
+      ((report.collapsiblesAttempted ?? 0) > 0 ||
+        (report.collapsiblesOpened ?? 0) > 0 ||
+        (report.sequentialGroupsDetected ?? 0) > 0),
+  );
   const showWarnings = Boolean(report?.warnings.length);
+  const hasReport = showCounts || showWarnings;
 
   return (
     <section className="panel outputPanel">
@@ -82,7 +89,7 @@ export function OutputPane({
         </div>
       </div>
 
-      <div className="previewWrap">
+      <div className={hasReport ? "previewWrap" : "previewWrap previewWrapFill"}>
         <SyntaxHighlighter
           language={language}
           style={oneDark}
@@ -93,8 +100,9 @@ export function OutputPane({
             lineHeight: "1.6",
             fontFamily:
               "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace",
-            minHeight: 400,
-            maxHeight: 560,
+            minHeight: hasReport ? 400 : "100%",
+            maxHeight: hasReport ? 560 : "100%",
+            height: hasReport ? undefined : "100%",
           }}
           wrapLongLines={false}
           showLineNumbers={false}
@@ -103,15 +111,21 @@ export function OutputPane({
         </SyntaxHighlighter>
       </div>
 
-      {showCounts || showWarnings ? (
+      {hasReport ? (
         <div className="report">
           {showCounts ? (
             <>
               <h3>Extraction summary</h3>
               <ul>
-                <li>Collapsibles attempted: {report?.collapsiblesAttempted ?? 0}</li>
-                <li>Collapsibles opened: {report?.collapsiblesOpened ?? 0}</li>
-                <li>Sequential accordion groups: {report?.sequentialGroupsDetected ?? 0}</li>
+                {(report?.collapsiblesAttempted ?? 0) > 0 ? (
+                  <li>Collapsibles attempted: {report?.collapsiblesAttempted ?? 0}</li>
+                ) : null}
+                {(report?.collapsiblesOpened ?? 0) > 0 ? (
+                  <li>Collapsibles opened: {report?.collapsiblesOpened ?? 0}</li>
+                ) : null}
+                {(report?.sequentialGroupsDetected ?? 0) > 0 ? (
+                  <li>Sequential accordion groups: {report?.sequentialGroupsDetected ?? 0}</li>
+                ) : null}
               </ul>
             </>
           ) : null}
