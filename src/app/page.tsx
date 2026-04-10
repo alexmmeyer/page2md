@@ -9,6 +9,39 @@ import type { ConversionJsonOutput, ExtractionReport } from "@/lib/types/convers
 type SourceType = "url" | "html";
 type OutputFormat = "markdown" | "json";
 
+function stripFrontmatter(markdownText: string): string {
+  if (!markdownText.startsWith("---\n")) {
+    return markdownText;
+  }
+
+  const end = markdownText.indexOf("\n---\n", 4);
+  if (end === -1) {
+    return markdownText;
+  }
+
+  return markdownText.slice(end + 5);
+}
+
+function firstHeadingFromMarkdown(markdownText: string): string {
+  const withoutFrontmatter = stripFrontmatter(markdownText);
+  for (const line of withoutFrontmatter.split("\n")) {
+    const match = line.match(/^#{1,2}\s+(.+)\s*$/);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+  return "";
+}
+
+function sanitizeFileStem(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[`"']/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
 export default function Home() {
   const [sourceType, setSourceType] = useState<SourceType>("url");
   const [source, setSource] = useState("");
@@ -67,17 +100,69 @@ export default function Home() {
     navigator.clipboard.writeText(text);
   }
 
-  function handleDownload() {
+  async function handleDownload() {
     if (!hasOutput) {
       return;
     }
 
     const text = outputFormat === "json" ? JSON.stringify(json, null, 2) : markdown;
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const headingCandidate = firstHeadingFromMarkdown(markdown);
+    const stemFromContent = sanitizeFileStem(headingCandidate);
+    const stemFromTitle = sanitizeFileStem(title);
+    const fileStem = stemFromContent || stemFromTitle || "page2md-output";
+    const extension = outputFormat === "json" ? ".json" : ".md";
+    const suggestedName = `${fileStem}${extension}`;
+
+    type SaveFilePickerWindow = Window & {
+      showSaveFilePicker?: (options: {
+        suggestedName: string;
+        types: Array<{
+          description: string;
+          accept: Record<string, string[]>;
+        }>;
+      }) => Promise<{
+        createWritable: () => Promise<{
+          write: (data: Blob) => Promise<void>;
+          close: () => Promise<void>;
+        }>;
+      }>;
+    };
+
+    const pickerWindow = window as SaveFilePickerWindow;
+    if (pickerWindow.showSaveFilePicker) {
+      try {
+        const fileHandle = await pickerWindow.showSaveFilePicker({
+          suggestedName,
+          types: [
+            outputFormat === "json"
+              ? {
+                  description: "JSON file",
+                  accept: { "application/json": [".json"] },
+                }
+              : {
+                  description: "Markdown file",
+                  accept: { "text/markdown": [".md"] },
+                },
+          ],
+        });
+
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (error) {
+        // If user cancels, do nothing. Only fall back for unsupported/rejected APIs.
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
     const href = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = href;
-    link.download = outputFormat === "json" ? "page2md-output.json" : "page2md-output.md";
+    link.download = suggestedName;
     link.click();
     URL.revokeObjectURL(href);
   }

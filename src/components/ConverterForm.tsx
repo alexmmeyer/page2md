@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 type SourceType = "url" | "html";
 type OutputFormat = "markdown" | "json";
@@ -26,6 +26,7 @@ export function ConverterForm({
   onConvert,
   loading,
 }: ConverterFormProps) {
+  const urlInputRef = useRef<HTMLInputElement | null>(null);
   const sourceLabel = useMemo(
     () => (sourceType === "url" ? "Documentation URL" : "Full HTML source"),
     [sourceType],
@@ -67,14 +68,38 @@ export function ConverterForm({
         {sourceLabel}
       </label>
       {sourceType === "url" ? (
-        <input
-          id="sourceInput"
-          className="input"
-          type="url"
-          value={source}
-          placeholder="https://example.com/docs"
-          onChange={(event) => setSource(event.target.value)}
-        />
+        <div className="inputWrap">
+          <input
+            id="sourceInput"
+            ref={urlInputRef}
+            className={`input ${source.trim().length > 0 ? "withClear" : ""}`}
+            type="url"
+            value={source}
+            placeholder="https://example.com/docs"
+            onChange={(event) => setSource(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !loading && source.trim().length > 0) {
+                event.preventDefault();
+                onConvert();
+              }
+            }}
+          />
+          {source.trim().length > 0 ? (
+            <button
+              type="button"
+              className="clearInputButton"
+              aria-label="Clear URL"
+              onClick={() => {
+                setSource("");
+                requestAnimationFrame(() => {
+                  urlInputRef.current?.focus();
+                });
+              }}
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
       ) : (
         <>
           <textarea
