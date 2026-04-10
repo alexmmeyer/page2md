@@ -9,8 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@sparticuz/chromium": "147.0.0",
     "next": "16.2.3",
-    "playwright": "^1.59.1",
+    "playwright-core": "^1.59.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-syntax-highlighter": "^16.1.1",
@@ -19,6 +20,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "playwright": "^1.59.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

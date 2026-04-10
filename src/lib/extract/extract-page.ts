@@ -1,4 +1,5 @@
-import { chromium } from "playwright";
+import sparticuzChromium from "@sparticuz/chromium";
+import { chromium, type Browser } from "playwright-core";
 
 interface ExtractedContent {
   title: string;
@@ -45,14 +46,18 @@ type ExtractOptions = {
   mainContentOnly: boolean;
 };
 
-export async function extractPageContent({
-  sourceType,
-  source,
-  mainContentOnly,
-}: ExtractOptions): Promise<ExtractedContent> {
-  let browser: Awaited<ReturnType<typeof chromium.launch>>;
+async function launchBrowser(): Promise<Browser> {
+  if (process.env.VERCEL === "1") {
+    sparticuzChromium.setGraphicsMode = false;
+    return chromium.launch({
+      args: sparticuzChromium.args,
+      executablePath: await sparticuzChromium.executablePath(),
+      headless: true,
+    });
+  }
+
   try {
-    browser = await chromium.launch({ headless: true });
+    return await chromium.launch({ headless: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Playwright launch error";
     const looksLikeMissingBinary =
@@ -62,7 +67,7 @@ export async function extractPageContent({
 
     if (looksLikeMissingBinary) {
       try {
-        browser = await chromium.launch({ headless: true, channel: "chrome" });
+        return await chromium.launch({ headless: true, channel: "chrome" });
       } catch (chromeError) {
         const chromeMessage =
           chromeError instanceof Error ? chromeError.message : "Unknown Chrome fallback error";
@@ -70,10 +75,17 @@ export async function extractPageContent({
           `Playwright Chromium is unavailable and Chrome fallback failed. Install bundled browser with "npx playwright install chromium" or ensure Google Chrome is installed. (chromium: ${message}) (chrome fallback: ${chromeMessage})`,
         );
       }
-    } else {
-      throw new Error(`Playwright launch failed: ${message}`);
     }
+    throw new Error(`Playwright launch failed: ${message}`);
   }
+}
+
+export async function extractPageContent({
+  sourceType,
+  source,
+  mainContentOnly,
+}: ExtractOptions): Promise<ExtractedContent> {
+  const browser = await launchBrowser();
   const page = await browser.newPage();
 
   try {
