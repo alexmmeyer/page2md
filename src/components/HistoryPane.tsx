@@ -15,8 +15,8 @@ export interface HistoryItem {
   outputFormat: OutputFormat;
   title: string;
   preview: string;
-  markdown: string;
-  json: ConversionJsonOutput;
+  markdown?: string;
+  json?: ConversionJsonOutput;
   report: ExtractionReport;
   meta: ConversionMeta;
 }

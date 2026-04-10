@@ -21,8 +21,8 @@ interface HistoryItem {
   outputFormat: OutputFormat;
   title: string;
   preview: string;
-  markdown: string;
-  json: ConversionJsonOutput;
+  markdown?: string;
+  json?: ConversionJsonOutput;
   report: ExtractionReport;
   meta: ConversionMeta;
 }
@@ -80,6 +80,24 @@ function plainTitle(value: string): string {
     .trim();
 }
 
+function resolveDisplayedOutput(
+  requestedFormat: OutputFormat,
+  markdownValue: string,
+  jsonValue: ConversionJsonOutput | null,
+): { format: OutputFormat; text: string } {
+  if (requestedFormat === "json") {
+    if (jsonValue) {
+      return { format: "json", text: JSON.stringify(jsonValue, null, 2) };
+    }
+    return { format: "markdown", text: markdownValue };
+  }
+
+  if (markdownValue.trim().length > 0) {
+    return { format: "markdown", text: markdownValue };
+  }
+  return { format: "json", text: jsonValue ? JSON.stringify(jsonValue, null, 2) : "" };
+}
+
 export default function Home() {
   const [sourceType, setSourceType] = useState<SourceType>("url");
   const [sourcesByType, setSourcesByType] = useState<Record<SourceType, string>>({
@@ -98,9 +116,9 @@ export default function Home() {
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
 
-  const hasOutput = useMemo(
-    () => (outputFormat === "json" ? Boolean(json) : markdown.trim().length > 0),
-    [json, markdown, outputFormat],
+  const displayedOutput = useMemo(
+    () => resolveDisplayedOutput(outputFormat, markdown, json),
+    [outputFormat, markdown, json],
   );
   const source = sourcesByType[sourceType];
 
@@ -173,13 +191,16 @@ export default function Home() {
       }
 
       const conversion = payload as ConversionResponse;
-      setMarkdown(payload.markdown);
-      setJson(payload.json);
+      const resolvedMarkdown = conversion.markdown ?? "";
+      const resolvedJson = conversion.json ?? null;
+      setMarkdown(resolvedMarkdown);
+      setJson(resolvedJson);
       setReport(payload.report);
       setOutputSourceType(conversion.meta.sourceType);
       setTitle(payload.meta?.title ?? "");
 
-      const heading = firstHeadingFromMarkdown(conversion.markdown);
+      const baseMarkdown = conversion.markdown ?? conversion.json?.markdown ?? "";
+      const heading = firstHeadingFromMarkdown(baseMarkdown);
       const itemTitle = plainTitle(heading || conversion.meta?.title || "Untitled conversion");
       const historyItem: HistoryItem = {
         id:
@@ -190,7 +211,7 @@ export default function Home() {
         sourceType,
         outputFormat,
         title: itemTitle,
-        preview: conversionPreview(conversion.markdown),
+        preview: conversionPreview(baseMarkdown),
         markdown: conversion.markdown,
         json: conversion.json,
         report: conversion.report,
@@ -207,8 +228,8 @@ export default function Home() {
   }
 
   function handleSelectHistory(item: HistoryItem) {
-    setMarkdown(item.markdown);
-    setJson(item.json);
+    setMarkdown(item.markdown ?? "");
+    setJson(item.json ?? null);
     setReport(item.report);
     setOutputSourceType(item.meta.sourceType);
     setOutputFormat(item.outputFormat);
@@ -217,25 +238,24 @@ export default function Home() {
   }
 
   function handleCopy() {
-    if (!hasOutput) {
+    if (displayedOutput.text.trim().length === 0) {
       return;
     }
-    const text = outputFormat === "json" ? JSON.stringify(json, null, 2) : markdown;
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(displayedOutput.text);
   }
 
   async function handleDownload() {
-    if (!hasOutput) {
+    if (displayedOutput.text.trim().length === 0) {
       return;
     }
 
-    const text = outputFormat === "json" ? JSON.stringify(json, null, 2) : markdown;
+    const text = displayedOutput.text;
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const headingCandidate = firstHeadingFromMarkdown(markdown);
     const stemFromContent = sanitizeFileStem(headingCandidate);
     const stemFromTitle = sanitizeFileStem(title);
     const fileStem = stemFromContent || stemFromTitle || "page2md-output";
-    const extension = outputFormat === "json" ? ".json" : ".md";
+    const extension = displayedOutput.format === "json" ? ".json" : ".md";
     const suggestedName = `${fileStem}${extension}`;
 
     type SaveFilePickerWindow = Window & {

@@ -251,14 +251,19 @@ export function ConverterForm({
       <button
         type="button"
         className="convertButton"
-        onClick={onConvert}
+        onClick={() => {
+          if (!hasSource) {
+            return;
+          }
+          onConvert();
+        }}
         onKeyDown={(event) => {
           if (isSubmitKey(event.key) && !loading && hasSource) {
             event.preventDefault();
             onConvert();
           }
         }}
-        disabled={loading || !hasSource}
+        disabled={loading}
       >
         {loading ? "Converting..." : "Convert"}
       </button>

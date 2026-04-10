@@ -30,11 +30,39 @@ export interface ConversionJsonOutput {
     level: number;
     title: string;
   }>;
+  blocks: ConversionBlock[];
 }
 
+export type ConversionBlock =
+  | {
+      type: "heading";
+      level: number;
+      text: string;
+    }
+  | {
+      type: "paragraph";
+      text: string;
+    }
+  | {
+      type: "list";
+      ordered: boolean;
+      items: string[];
+    }
+  | {
+      type: "code";
+      language: string;
+      code: string;
+    }
+  | {
+      type: "table";
+      headers: string[];
+      rows: string[][];
+    };
+
 export interface ConversionResponse {
-  markdown: string;
-  json: ConversionJsonOutput;
+  outputFormat: OutputFormat;
+  markdown?: string;
+  json?: ConversionJsonOutput;
   report: ExtractionReport;
   meta: ConversionMeta;
 }

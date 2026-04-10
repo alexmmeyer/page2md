@@ -25,6 +25,24 @@ function prettyJson(json: ConversionJsonOutput | null): string {
   return JSON.stringify(json, null, 2);
 }
 
+function resolvePreview(
+  requestedFormat: OutputFormat,
+  markdownValue: string,
+  jsonValue: ConversionJsonOutput | null,
+): { language: "markdown" | "json"; value: string } {
+  if (requestedFormat === "json") {
+    if (jsonValue) {
+      return { language: "json", value: prettyJson(jsonValue) };
+    }
+    return { language: "markdown", value: markdownValue };
+  }
+
+  if (markdownValue.trim().length > 0) {
+    return { language: "markdown", value: markdownValue };
+  }
+  return { language: "json", value: prettyJson(jsonValue) };
+}
+
 export function OutputPane({
   markdown,
   json,
@@ -35,8 +53,9 @@ export function OutputPane({
   onCopy,
   onDownload,
 }: OutputPaneProps) {
-  const previewValue = outputFormat === "json" ? prettyJson(json) : markdown;
-  const language = outputFormat === "json" ? "json" : "markdown";
+  const preview = resolvePreview(outputFormat, markdown, json);
+  const previewValue = preview.value;
+  const language = preview.language;
   const hasPreview = previewValue.trim().length > 0;
   const showCounts = Boolean(report && outputSourceType === "url");
   const showWarnings = Boolean(report?.warnings.length);

@@ -88,10 +88,13 @@ export async function POST(request: Request) {
             markdownBody,
           ].join("\n");
 
-    const json = emitJsonOutput(markdown, meta, report);
     const response: ConversionResponse = {
-      markdown,
-      json,
+      outputFormat: payload.outputFormat,
+      markdown: payload.outputFormat === "markdown" ? markdown : undefined,
+      json:
+        payload.outputFormat === "json"
+          ? emitJsonOutput(markdown, meta, report)
+          : undefined,
       report,
       meta,
     };
