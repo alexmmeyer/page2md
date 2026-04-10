@@ -1,13 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ConverterForm } from "@/components/ConverterForm";
+import { HistoryPane } from "@/components/HistoryPane";
 import { OutputPane } from "@/components/OutputPane";
-import type { ConversionJsonOutput, ExtractionReport } from "@/lib/types/conversion";
+import type {
+  ConversionJsonOutput,
+  ConversionMeta,
+  OutputFormat,
+  ConversionResponse,
+  ExtractionReport,
+  SourceType,
+} from "@/lib/types/conversion";
 
-type SourceType = "url" | "html" | "paste";
-type OutputFormat = "markdown" | "json";
+interface HistoryItem {
+  id: string;
+  createdAt: string;
+  sourceType: SourceType;
+  outputFormat: OutputFormat;
+  title: string;
+  preview: string;
+  markdown: string;
+  json: ConversionJsonOutput;
+  report: ExtractionReport;
+  meta: ConversionMeta;
+}
+
+const HISTORY_STORAGE_KEY = "page2md-session-history";
 
 function stripFrontmatter(markdownText: string): string {
   if (!markdownText.startsWith("---\n")) {
@@ -42,21 +62,93 @@ function sanitizeFileStem(value: string): string {
     .slice(0, 80);
 }
 
+function conversionPreview(markdownText: string): string {
+  const withoutFrontmatter = stripFrontmatter(markdownText);
+  const lines = withoutFrontmatter
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !line.startsWith("```"));
+  return lines.slice(0, 2).join(" ").slice(0, 220);
+}
+
+function plainTitle(value: string): string {
+  return value
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/[`*_~>#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function Home() {
   const [sourceType, setSourceType] = useState<SourceType>("url");
-  const [source, setSource] = useState("");
+  const [sourcesByType, setSourcesByType] = useState<Record<SourceType, string>>({
+    url: "",
+    html: "",
+    paste: "",
+  });
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("markdown");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [markdown, setMarkdown] = useState("");
   const [json, setJson] = useState<ConversionJsonOutput | null>(null);
   const [report, setReport] = useState<ExtractionReport | null>(null);
+  const [outputSourceType, setOutputSourceType] = useState<SourceType | null>(null);
   const [title, setTitle] = useState("");
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
 
   const hasOutput = useMemo(
     () => (outputFormat === "json" ? Boolean(json) : markdown.trim().length > 0),
     [json, markdown, outputFormat],
   );
+  const source = sourcesByType[sourceType];
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(HISTORY_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as {
+        items?: HistoryItem[];
+        activeId?: string | null;
+      };
+
+      const restoredItems = Array.isArray(parsed.items) ? parsed.items : [];
+      const restoredActiveId =
+        typeof parsed.activeId === "string" || parsed.activeId === null
+          ? parsed.activeId
+          : null;
+
+      setHistoryItems(restoredItems);
+      setActiveHistoryId(restoredActiveId ?? null);
+    } catch {
+      // Ignore invalid session payload and start with empty history.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        HISTORY_STORAGE_KEY,
+        JSON.stringify({
+          items: historyItems,
+          activeId: activeHistoryId,
+        }),
+      );
+    } catch {
+      // Ignore sessionStorage write failures.
+    }
+  }, [activeHistoryId, historyItems]);
+
+  function setSource(value: string) {
+    setSourcesByType((previous) => ({
+      ...previous,
+      [sourceType]: value,
+    }));
+  }
 
   async function handleConvert() {
     setLoading(true);
@@ -80,16 +172,48 @@ export default function Home() {
         throw new Error(payload.error ?? "Conversion failed.");
       }
 
+      const conversion = payload as ConversionResponse;
       setMarkdown(payload.markdown);
       setJson(payload.json);
       setReport(payload.report);
+      setOutputSourceType(conversion.meta.sourceType);
       setTitle(payload.meta?.title ?? "");
+
+      const heading = firstHeadingFromMarkdown(conversion.markdown);
+      const itemTitle = plainTitle(heading || conversion.meta?.title || "Untitled conversion");
+      const historyItem: HistoryItem = {
+        id:
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        createdAt: new Date().toISOString(),
+        sourceType,
+        outputFormat,
+        title: itemTitle,
+        preview: conversionPreview(conversion.markdown),
+        markdown: conversion.markdown,
+        json: conversion.json,
+        report: conversion.report,
+        meta: conversion.meta,
+      };
+      setHistoryItems((previous) => [historyItem, ...previous]);
+      setActiveHistoryId(historyItem.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unexpected error.";
       setError(message);
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleSelectHistory(item: HistoryItem) {
+    setMarkdown(item.markdown);
+    setJson(item.json);
+    setReport(item.report);
+    setOutputSourceType(item.meta.sourceType);
+    setOutputFormat(item.outputFormat);
+    setTitle(item.meta.title);
+    setActiveHistoryId(item.id);
   }
 
   function handleCopy() {
@@ -190,9 +314,15 @@ export default function Home() {
           json={json}
           outputFormat={outputFormat}
           report={report}
+          outputSourceType={outputSourceType}
           title={title}
           onCopy={handleCopy}
           onDownload={handleDownload}
+        />
+        <HistoryPane
+          items={historyItems}
+          activeId={activeHistoryId}
+          onSelect={handleSelectHistory}
         />
       </div>
 

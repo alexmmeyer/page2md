@@ -27,6 +27,7 @@ export function ConverterForm({
   loading,
 }: ConverterFormProps) {
   const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const htmlInputRef = useRef<HTMLTextAreaElement | null>(null);
   const pasteEditorRef = useRef<HTMLDivElement | null>(null);
   const sourceLabel = useMemo(
     () => {
@@ -64,6 +65,12 @@ export function ConverterForm({
 
   return (
     <section className="panel">
+      <div className="outputHeader">
+        <div>
+          <h2>Input</h2>
+          <p className="muted">Choose source mode and provide content.</p>
+        </div>
+      </div>
       <div className="row">
         <label className="fieldLabel" htmlFor="sourceType">
           Source
@@ -78,17 +85,17 @@ export function ConverterForm({
           </button>
           <button
             type="button"
-            className={sourceType === "html" ? "segment active" : "segment"}
-            onClick={() => setSourceType("html")}
-          >
-            HTML
-          </button>
-          <button
-            type="button"
             className={sourceType === "paste" ? "segment active" : "segment"}
             onClick={() => setSourceType("paste")}
           >
             Paste
+          </button>
+          <button
+            type="button"
+            className={sourceType === "html" ? "segment active" : "segment"}
+            onClick={() => setSourceType("html")}
+          >
+            HTML
           </button>
         </div>
       </div>
@@ -102,7 +109,13 @@ export function ConverterForm({
             id="sourceInput"
             ref={urlInputRef}
             className={`input ${hasSource ? "withClear" : ""}`}
-            type="url"
+            type="text"
+            inputMode="url"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            name="page2md-url-input"
             value={source}
             placeholder="https://example.com/docs"
             onChange={(event) => setSource(event.target.value)}
@@ -130,14 +143,36 @@ export function ConverterForm({
           ) : null}
         </div>
       ) : sourceType === "html" ? (
-        <>
+        <div className="inputWrap">
           <textarea
             id="sourceInput"
-            className="textarea"
+            ref={htmlInputRef}
+            className={`textarea ${hasSource ? "withClear" : ""}`}
             value={source}
             placeholder="Paste full page HTML here, or upload an .html file below..."
             onChange={(event) => setSource(event.target.value)}
+            onKeyDown={(event) => {
+              if (isSubmitKey(event.key) && !loading && hasSource) {
+                event.preventDefault();
+                onConvert();
+              }
+            }}
           />
+          {hasSource ? (
+            <button
+              type="button"
+              className="clearInputButton clearInputButtonTop"
+              aria-label="Clear HTML source"
+              onClick={() => {
+                setSource("");
+                requestAnimationFrame(() => {
+                  htmlInputRef.current?.focus();
+                });
+              }}
+            >
+              ×
+            </button>
+          ) : null}
           <label className="fileLabel" htmlFor="htmlFileInput">
             Upload HTML file
           </label>
@@ -151,7 +186,7 @@ export function ConverterForm({
               void handleHtmlFileSelected(file);
             }}
           />
-        </>
+        </div>
       ) : (
         <div className="inputWrap">
           <div
@@ -208,7 +243,7 @@ export function ConverterForm({
           value={outputFormat}
           onChange={(event) => setOutputFormat(event.target.value as OutputFormat)}
         >
-          <option value="markdown">Markdown (default)</option>
+          <option value="markdown">Markdown</option>
           <option value="json">JSON (machine-readable)</option>
         </select>
       </div>

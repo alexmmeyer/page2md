@@ -74,16 +74,19 @@ export async function POST(request: Request) {
       report = extracted.report;
     }
 
-    const markdown = [
-      "---",
-      `title: "${meta.title.replaceAll('"', '\\"')}"`,
-      `sourceType: "${meta.sourceType}"`,
-      `source: "${meta.source.replaceAll('"', '\\"')}"`,
-      `convertedAt: "${meta.convertedAt}"`,
-      "---",
-      "",
-      markdownBody,
-    ].join("\n");
+    const markdown =
+      meta.sourceType === "paste"
+        ? markdownBody
+        : [
+            "---",
+            `title: "${meta.title.replaceAll('"', '\\"')}"`,
+            `sourceType: "${meta.sourceType}"`,
+            `source: "${meta.source.replaceAll('"', '\\"')}"`,
+            `convertedAt: "${meta.convertedAt}"`,
+            "---",
+            "",
+            markdownBody,
+          ].join("\n");
 
     const json = emitJsonOutput(markdown, meta, report);
     const response: ConversionResponse = {

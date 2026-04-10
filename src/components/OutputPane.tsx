@@ -3,7 +3,7 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-import type { ConversionJsonOutput, ExtractionReport } from "@/lib/types/conversion";
+import type { ConversionJsonOutput, ExtractionReport, SourceType } from "@/lib/types/conversion";
 
 type OutputFormat = "markdown" | "json";
 
@@ -12,6 +12,7 @@ interface OutputPaneProps {
   json: ConversionJsonOutput | null;
   outputFormat: OutputFormat;
   report: ExtractionReport | null;
+  outputSourceType: SourceType | null;
   title: string;
   onCopy: () => void;
   onDownload: () => void;
@@ -29,6 +30,7 @@ export function OutputPane({
   json,
   outputFormat,
   report,
+  outputSourceType,
   title,
   onCopy,
   onDownload,
@@ -36,6 +38,8 @@ export function OutputPane({
   const previewValue = outputFormat === "json" ? prettyJson(json) : markdown;
   const language = outputFormat === "json" ? "json" : "markdown";
   const hasPreview = previewValue.trim().length > 0;
+  const showCounts = Boolean(report && outputSourceType === "url");
+  const showWarnings = Boolean(report?.warnings.length);
 
   return (
     <section className="panel outputPanel">
@@ -80,14 +84,28 @@ export function OutputPane({
         </SyntaxHighlighter>
       </div>
 
-      {report?.warnings.length ? (
+      {showCounts || showWarnings ? (
         <div className="report">
-          <h3>Notes</h3>
-          <div className="warningBox">
-            {report.warnings.map((warning) => (
-              <p key={warning}>{warning}</p>
-            ))}
-          </div>
+          {showCounts ? (
+            <>
+              <h3>Extraction summary</h3>
+              <ul>
+                <li>Collapsibles attempted: {report?.collapsiblesAttempted ?? 0}</li>
+                <li>Collapsibles opened: {report?.collapsiblesOpened ?? 0}</li>
+                <li>Sequential accordion groups: {report?.sequentialGroupsDetected ?? 0}</li>
+              </ul>
+            </>
+          ) : null}
+          {showWarnings ? (
+            <>
+              <h3>{showCounts ? "Notes" : "Notes"}</h3>
+              <div className="warningBox">
+                {report?.warnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
     </section>
