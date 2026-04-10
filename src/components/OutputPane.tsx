@@ -80,23 +80,14 @@ export function OutputPane({
         </SyntaxHighlighter>
       </div>
 
-      {report ? (
+      {report?.warnings.length ? (
         <div className="report">
-          <h3>Extraction report</h3>
-          <ul>
-            <li>Collapsibles attempted: {report.collapsiblesAttempted}</li>
-            <li>Collapsibles opened: {report.collapsiblesOpened}</li>
-            <li>Sequential accordion groups: {report.sequentialGroupsDetected}</li>
-          </ul>
-          {report.warnings.length > 0 ? (
-            <div className="warningBox">
-              {report.warnings.map((warning) => (
-                <p key={warning}>{warning}</p>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">No extraction warnings detected.</p>
-          )}
+          <h3>Notes</h3>
+          <div className="warningBox">
+            {report.warnings.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+          </div>
         </div>
       ) : null}
     </section>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
-type SourceType = "url" | "html";
+type SourceType = "url" | "html" | "paste";
 type OutputFormat = "markdown" | "json";
 
 interface ConverterFormProps {
@@ -27,8 +27,17 @@ export function ConverterForm({
   loading,
 }: ConverterFormProps) {
   const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const pasteEditorRef = useRef<HTMLDivElement | null>(null);
   const sourceLabel = useMemo(
-    () => (sourceType === "url" ? "Documentation URL" : "Full HTML source"),
+    () => {
+      if (sourceType === "url") {
+        return "Documentation URL";
+      }
+      if (sourceType === "html") {
+        return "Full HTML source";
+      }
+      return "Snippet to convert";
+    },
     [sourceType],
   );
 
@@ -39,6 +48,19 @@ export function ConverterForm({
     const text = await file.text();
     setSource(text);
   }
+
+  const hasSource = source.trim().length > 0;
+  const isSubmitKey = (key: string) => key === "Enter" || key === "NumpadEnter";
+
+  useEffect(() => {
+    if (sourceType !== "paste" || !pasteEditorRef.current) {
+      return;
+    }
+
+    if (pasteEditorRef.current.innerHTML !== source) {
+      pasteEditorRef.current.innerHTML = source;
+    }
+  }, [source, sourceType]);
 
   return (
     <section className="panel">
@@ -61,6 +83,13 @@ export function ConverterForm({
           >
             HTML
           </button>
+          <button
+            type="button"
+            className={sourceType === "paste" ? "segment active" : "segment"}
+            onClick={() => setSourceType("paste")}
+          >
+            Paste
+          </button>
         </div>
       </div>
 
@@ -72,19 +101,19 @@ export function ConverterForm({
           <input
             id="sourceInput"
             ref={urlInputRef}
-            className={`input ${source.trim().length > 0 ? "withClear" : ""}`}
+            className={`input ${hasSource ? "withClear" : ""}`}
             type="url"
             value={source}
             placeholder="https://example.com/docs"
             onChange={(event) => setSource(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !loading && source.trim().length > 0) {
+              if (isSubmitKey(event.key) && !loading && hasSource) {
                 event.preventDefault();
                 onConvert();
               }
             }}
           />
-          {source.trim().length > 0 ? (
+          {hasSource ? (
             <button
               type="button"
               className="clearInputButton"
@@ -100,7 +129,7 @@ export function ConverterForm({
             </button>
           ) : null}
         </div>
-      ) : (
+      ) : sourceType === "html" ? (
         <>
           <textarea
             id="sourceInput"
@@ -123,6 +152,50 @@ export function ConverterForm({
             }}
           />
         </>
+      ) : (
+        <div className="inputWrap">
+          <div
+            id="sourceInput"
+            ref={pasteEditorRef}
+            className={`textarea pasteEditor ${hasSource ? "withClear" : ""}`}
+            role="textbox"
+            aria-multiline="true"
+            contentEditable
+            data-placeholder="Paste a snippet with formatting (lists, tables, links, etc.)..."
+            onInput={(event) => {
+              setSource(event.currentTarget.innerHTML);
+            }}
+            onPaste={() => {
+              requestAnimationFrame(() => {
+                setSource(pasteEditorRef.current?.innerHTML ?? "");
+              });
+            }}
+            onKeyDown={(event) => {
+              if (isSubmitKey(event.key) && !event.shiftKey && !loading && hasSource) {
+                event.preventDefault();
+                onConvert();
+              }
+            }}
+          />
+          {hasSource ? (
+            <button
+              type="button"
+              className="clearInputButton"
+              aria-label="Clear pasted content"
+              onClick={() => {
+                setSource("");
+                if (pasteEditorRef.current) {
+                  pasteEditorRef.current.innerHTML = "";
+                }
+                requestAnimationFrame(() => {
+                  pasteEditorRef.current?.focus();
+                });
+              }}
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
       )}
 
       <div className="row">
@@ -144,7 +217,13 @@ export function ConverterForm({
         type="button"
         className="convertButton"
         onClick={onConvert}
-        disabled={loading || source.trim().length === 0}
+        onKeyDown={(event) => {
+          if (isSubmitKey(event.key) && !loading && hasSource) {
+            event.preventDefault();
+            onConvert();
+          }
+        }}
+        disabled={loading || !hasSource}
       >
         {loading ? "Converting..." : "Convert"}
       </button>

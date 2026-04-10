@@ -1,4 +1,4 @@
-export type SourceType = "url" | "html";
+export type SourceType = "url" | "html" | "paste";
 export type OutputFormat = "markdown" | "json";
 
 export interface ConversionRequest {

@@ -9,7 +9,7 @@ import type { ConversionResponse } from "@/lib/types/conversion";
 export const runtime = "nodejs";
 
 const conversionRequestSchema = z.object({
-  sourceType: z.enum(["url", "html"]),
+  sourceType: z.enum(["url", "html", "paste"]),
   source: z.string().min(1, "Source is required."),
   outputFormat: z.enum(["markdown", "json"]).default("markdown"),
   mainContentOnly: z.boolean().default(true),
@@ -29,19 +29,50 @@ export async function POST(request: Request) {
       }
     }
 
-    const extracted = await extractPageContent({
-      sourceType: payload.sourceType,
-      source: payload.source,
-      mainContentOnly: payload.mainContentOnly,
-    });
+    const convertedAt = new Date().toISOString();
+    let markdownBody = "";
+    let meta: {
+      sourceType: "url" | "html" | "paste";
+      source: string;
+      title: string;
+      convertedAt: string;
+    };
+    let report: {
+      collapsiblesAttempted: number;
+      collapsiblesOpened: number;
+      sequentialGroupsDetected: number;
+      warnings: string[];
+    };
 
-    const markdownBody = htmlToMarkdown(extracted.html);
-    const meta = {
-      sourceType: payload.sourceType,
-      source: payload.sourceType === "url" ? payload.source : "Pasted HTML source",
-      title: extracted.title,
-      convertedAt: new Date().toISOString(),
-    } as const;
+    if (payload.sourceType === "paste") {
+      markdownBody = htmlToMarkdown(payload.source);
+      meta = {
+        sourceType: payload.sourceType,
+        source: "Pasted snippet",
+        title: "Pasted Snippet",
+        convertedAt,
+      };
+      report = {
+        collapsiblesAttempted: 0,
+        collapsiblesOpened: 0,
+        sequentialGroupsDetected: 0,
+        warnings: [],
+      };
+    } else {
+      const extracted = await extractPageContent({
+        sourceType: payload.sourceType,
+        source: payload.source,
+        mainContentOnly: payload.mainContentOnly,
+      });
+      markdownBody = htmlToMarkdown(extracted.html);
+      meta = {
+        sourceType: payload.sourceType,
+        source: payload.sourceType === "url" ? payload.source : "Pasted HTML source",
+        title: extracted.title,
+        convertedAt,
+      };
+      report = extracted.report;
+    }
 
     const markdown = [
       "---",
@@ -54,11 +85,11 @@ export async function POST(request: Request) {
       markdownBody,
     ].join("\n");
 
-    const json = emitJsonOutput(markdown, meta, extracted.report);
+    const json = emitJsonOutput(markdown, meta, report);
     const response: ConversionResponse = {
       markdown,
       json,
-      report: extracted.report,
+      report,
       meta,
     };
 

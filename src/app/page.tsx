@@ -6,7 +6,7 @@ import { ConverterForm } from "@/components/ConverterForm";
 import { OutputPane } from "@/components/OutputPane";
 import type { ConversionJsonOutput, ExtractionReport } from "@/lib/types/conversion";
 
-type SourceType = "url" | "html";
+type SourceType = "url" | "html" | "paste";
 type OutputFormat = "markdown" | "json";
 
 function stripFrontmatter(markdownText: string): string {
