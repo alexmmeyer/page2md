@@ -62,6 +62,20 @@ function sanitizeFileStem(value: string): string {
     .slice(0, 80);
 }
 
+function dedupeRepeatedStem(stem: string): string {
+  const parts = stem.split("-").filter(Boolean);
+  if (parts.length < 2 || parts.length % 2 !== 0) {
+    return stem;
+  }
+
+  const half = parts.length / 2;
+  const firstHalf = parts.slice(0, half);
+  const secondHalf = parts.slice(half);
+  const isExactRepeat = firstHalf.every((value, index) => value === secondHalf[index]);
+
+  return isExactRepeat ? firstHalf.join("-") : stem;
+}
+
 function conversionPreview(markdownText: string): string {
   const withoutFrontmatter = stripFrontmatter(markdownText);
   const lines = withoutFrontmatter
@@ -169,6 +183,11 @@ export default function Home() {
   }
 
   async function handleConvert() {
+    if (source.trim().length === 0) {
+      setError("Please provide input before converting.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
@@ -252,8 +271,8 @@ export default function Home() {
     const text = displayedOutput.text;
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const headingCandidate = firstHeadingFromMarkdown(markdown);
-    const stemFromContent = sanitizeFileStem(headingCandidate);
-    const stemFromTitle = sanitizeFileStem(title);
+    const stemFromContent = dedupeRepeatedStem(sanitizeFileStem(headingCandidate));
+    const stemFromTitle = dedupeRepeatedStem(sanitizeFileStem(title));
     const fileStem = stemFromContent || stemFromTitle || "page2md-output";
     const extension = displayedOutput.format === "json" ? ".json" : ".md";
     const suggestedName = `${fileStem}${extension}`;
