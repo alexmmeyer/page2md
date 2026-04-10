@@ -239,10 +239,38 @@ a:visited {
   cursor: pointer;
 }
 
+.convertButtonContent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.buttonSpinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(10, 15, 22, 0.25);
+  border-top-color: rgba(10, 15, 22, 0.95);
+  animation: buttonSpinnerSpin 700ms linear infinite;
+}
+
 .convertButton:disabled,
 .ghostButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@keyframes buttonSpinnerSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buttonSpinner {
+    animation: none;
+  }
 }
 
 .outputHeader {

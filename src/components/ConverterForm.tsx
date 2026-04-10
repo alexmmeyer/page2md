@@ -259,8 +259,12 @@ export function ConverterForm({
           }
         }}
         disabled={loading}
+        aria-busy={loading}
       >
-        {loading ? "Converting..." : "Convert"}
+        <span className="convertButtonContent">
+          {loading ? <span className="buttonSpinner" aria-hidden="true" /> : null}
+          <span>{loading ? "Converting..." : "Convert"}</span>
+        </span>
       </button>
     </section>
   );
