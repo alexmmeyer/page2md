@@ -70,7 +70,7 @@ a:visited {
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(420px, 1fr) minmax(300px, 360px);
+  grid-template-columns: minmax(280px, 336px) minmax(440px, 1fr) minmax(280px, 336px);
   gap: 16px;
   flex: 1;
   min-width: 0;
