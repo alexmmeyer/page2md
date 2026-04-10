@@ -170,7 +170,7 @@ export default function Home() {
   return (
     <main className="appShell">
       <header className="header">
-        <h1>Page2MD</h1>
+        <h1>page2md</h1>
         <p>Convert rich docs pages into markdown in one shot.</p>
       </header>
 

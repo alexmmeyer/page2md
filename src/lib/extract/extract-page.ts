@@ -121,7 +121,9 @@ export async function extractPageContent({
         const mainElement = uniqCandidates.sort(
           (a, b) => scoreElement(b) - scoreElement(a),
         )[0];
-        mainElement.setAttribute("data-page2md-main", "true");
+        const scopeElement = mainOnly ? mainElement : document.body;
+        const isIncludedInOutput = (element: Element) =>
+          !excludedSelectors.some((selector) => element.closest(selector));
 
         const iframeCount = document.querySelectorAll("iframe").length;
         if (iframeCount > 0) {
@@ -131,34 +133,42 @@ export async function extractPageContent({
         }
 
         const detailsNodes = Array.from(
-          document.querySelectorAll<HTMLDetailsElement>("details"),
-        );
+          scopeElement.querySelectorAll<HTMLDetailsElement>("details"),
+        ).filter((details) => isIncludedInOutput(details));
         for (const details of detailsNodes) {
           collapsiblesAttempted += 1;
           if (!details.open) {
             details.open = true;
-            collapsiblesOpened += 1;
           }
+          // Already-open and newly-open details both count as opened for users.
+          collapsiblesOpened += 1;
         }
 
         const buttons = Array.from(
-          document.querySelectorAll<HTMLElement>(
-            "button, [role='button'], [role='tab'], summary",
+          scopeElement.querySelectorAll<HTMLElement>(
+            "button, [role='button'], [role='tab']",
           ),
         ).filter((el) => {
+          if (!isIncludedInOutput(el)) {
+            return false;
+          }
           const text = (el.textContent || "").toLowerCase();
           const expanded = el.getAttribute("aria-expanded");
+          const isBulkToggle =
+            text.includes("expand all") || text.includes("collapse all");
           return (
-            expanded === "false" ||
+            !isBulkToggle &&
+            (expanded === "false" ||
+              expanded === "true" ||
             text.includes("show more") ||
             text.includes("expand") ||
-            text.includes("open") ||
-            el.tagName.toLowerCase() === "summary"
+            text.includes("open"))
           );
         });
+        const uniqueButtons = Array.from(new Set(buttons));
 
         const parentToButtons = new Map<HTMLElement, HTMLElement[]>();
-        for (const btn of buttons) {
+        for (const btn of uniqueButtons) {
           const parent = btn.parentElement;
           if (!parent) {
             continue;
@@ -172,38 +182,39 @@ export async function extractPageContent({
           ([, groupButtons]) => groupButtons.length > 1,
         );
         sequentialGroupsDetected = groupedButtons.length;
+        const groupedButtonSet = new Set(groupedButtons.flatMap(([, group]) => group));
 
-        for (const [, groupButtons] of groupedButtons) {
-          for (const btn of groupButtons) {
-            collapsiblesAttempted += 1;
-            try {
-              btn.click();
-              await sleep(80);
-              collapsiblesOpened += 1;
-            } catch {
-              // Ignore click failures and continue with best-effort extraction.
-            }
-          }
-        }
-
-        for (const btn of buttons) {
-          if (groupedButtons.some(([, group]) => group.includes(btn))) {
-            continue;
-          }
+        const countButtonExpansion = async (btn: HTMLElement) => {
           collapsiblesAttempted += 1;
+          const expandedState = btn.getAttribute("aria-expanded");
+          if (expandedState === "true") {
+            collapsiblesOpened += 1;
+            return;
+          }
+
           try {
             btn.click();
-            await sleep(50);
+            await sleep(70);
             collapsiblesOpened += 1;
           } catch {
             // Ignore click failures and continue with best-effort extraction.
           }
+        };
+
+        for (const [, groupButtons] of groupedButtons) {
+          for (const btn of groupButtons) {
+            await countButtonExpansion(btn);
+          }
         }
 
-        const targetElement = mainOnly
-          ? (document.querySelector("[data-page2md-main='true']") ??
-            document.body)
-          : document.body;
+        for (const btn of uniqueButtons) {
+          if (groupedButtonSet.has(btn)) {
+            continue;
+          }
+          await countButtonExpansion(btn);
+        }
+
+        const targetElement = scopeElement;
         const clone = targetElement.cloneNode(true) as HTMLElement;
 
         for (const selector of excludedSelectors) {
