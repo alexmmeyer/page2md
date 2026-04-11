@@ -84,7 +84,7 @@ export default function PrivacyPolicyPage() {
         <h2>Contact</h2>
         <p>
           For privacy questions, email{" "}
-          <a href="mailto:alexmmeyer@gmail.com">alexmmeyer@gmail.com</a>.
+          <a href="mailto:page2md@gmail.com">page2md@gmail.com</a>.
         </p>
 
         <p className="policyBackLink">
