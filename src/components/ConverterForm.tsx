@@ -53,6 +53,29 @@ export function ConverterForm({
   const hasSource = source.trim().length > 0;
   const isSubmitKey = (key: string) => key === "Enter" || key === "NumpadEnter";
 
+  function clearSourceAndFocus() {
+    setSource("");
+    if (sourceType === "paste" && pasteEditorRef.current) {
+      pasteEditorRef.current.innerHTML = "";
+    }
+    requestAnimationFrame(() => {
+      if (sourceType === "url") {
+        urlInputRef.current?.focus();
+      } else if (sourceType === "html") {
+        htmlInputRef.current?.focus();
+      } else {
+        pasteEditorRef.current?.focus();
+      }
+    });
+  }
+
+  const clearAriaLabel =
+    sourceType === "url"
+      ? "Clear URL"
+      : sourceType === "html"
+        ? "Clear HTML source"
+        : "Clear pasted content";
+
   useEffect(() => {
     if (sourceType !== "paste" || !pasteEditorRef.current) {
       return;
@@ -100,15 +123,27 @@ export function ConverterForm({
         </div>
       </div>
 
-      <label className="fieldLabel" htmlFor="sourceInput">
-        {sourceLabel}
-      </label>
+      <div className="fieldLabelRow">
+        <label className="fieldLabel" htmlFor="sourceInput">
+          {sourceLabel}
+        </label>
+        {hasSource ? (
+          <button
+            type="button"
+            className="clearFieldButton"
+            aria-label={clearAriaLabel}
+            onClick={clearSourceAndFocus}
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
       {sourceType === "url" ? (
         <div className="inputWrap">
           <input
             id="sourceInput"
             ref={urlInputRef}
-            className={`input ${hasSource ? "withClear" : ""}`}
+            className="input"
             type="text"
             inputMode="url"
             autoComplete="off"
@@ -126,28 +161,13 @@ export function ConverterForm({
               }
             }}
           />
-          {hasSource ? (
-            <button
-              type="button"
-              className="clearInputButton"
-              aria-label="Clear URL"
-              onClick={() => {
-                setSource("");
-                requestAnimationFrame(() => {
-                  urlInputRef.current?.focus();
-                });
-              }}
-            >
-              ×
-            </button>
-          ) : null}
         </div>
       ) : sourceType === "html" ? (
         <div className="inputWrap">
           <textarea
             id="sourceInput"
             ref={htmlInputRef}
-            className={`textarea ${hasSource ? "withClear" : ""}`}
+            className="textarea"
             value={source}
             placeholder="Paste full page HTML here, or upload an .html file below..."
             onChange={(event) => setSource(event.target.value)}
@@ -158,21 +178,6 @@ export function ConverterForm({
               }
             }}
           />
-          {hasSource ? (
-            <button
-              type="button"
-              className="clearInputButton clearInputButtonTop"
-              aria-label="Clear HTML source"
-              onClick={() => {
-                setSource("");
-                requestAnimationFrame(() => {
-                  htmlInputRef.current?.focus();
-                });
-              }}
-            >
-              ×
-            </button>
-          ) : null}
           <label className="fileLabel" htmlFor="htmlFileInput">
             Upload HTML file
           </label>
@@ -192,7 +197,7 @@ export function ConverterForm({
           <div
             id="sourceInput"
             ref={pasteEditorRef}
-            className={`textarea pasteEditor ${hasSource ? "withClear" : ""}`}
+            className="textarea pasteEditor"
             role="textbox"
             aria-multiline="true"
             contentEditable
@@ -212,24 +217,6 @@ export function ConverterForm({
               }
             }}
           />
-          {hasSource ? (
-            <button
-              type="button"
-              className="clearInputButton"
-              aria-label="Clear pasted content"
-              onClick={() => {
-                setSource("");
-                if (pasteEditorRef.current) {
-                  pasteEditorRef.current.innerHTML = "";
-                }
-                requestAnimationFrame(() => {
-                  pasteEditorRef.current?.focus();
-                });
-              }}
-            >
-              ×
-            </button>
-          ) : null}
         </div>
       )}
 

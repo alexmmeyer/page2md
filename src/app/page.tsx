@@ -277,11 +277,19 @@ export default function Home() {
     setTitle(item.meta.title);
   }
 
-  function handleCopy() {
+  function handleDeleteHistoryItem(id: string) {
+    setHistoryItems((previous) => previous.filter((item) => item.id !== id));
+  }
+
+  function handleClearHistory() {
+    setHistoryItems([]);
+  }
+
+  function handleCopy(): Promise<void> {
     if (displayedOutput.text.trim().length === 0) {
-      return;
+      return Promise.resolve();
     }
-    navigator.clipboard.writeText(displayedOutput.text);
+    return navigator.clipboard.writeText(displayedOutput.text);
   }
 
   async function handleDownload() {
@@ -385,6 +393,8 @@ export default function Home() {
         <HistoryPane
           items={historyItems}
           onSelect={handleSelectHistory}
+          onDeleteItem={handleDeleteHistoryItem}
+          onClearHistory={handleClearHistory}
         />
       </div>
 

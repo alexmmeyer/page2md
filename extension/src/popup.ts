@@ -11,6 +11,8 @@ import { highlightMarkdownForPreview } from "./markdown-highlight";
 const STORAGE_KEY = "page2md-extension-v1";
 const MAX_HISTORY = 80;
 
+const TRASH_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>`;
+
 interface ExtensionHistoryItem {
   id: string;
   createdAt: string;
@@ -268,26 +270,43 @@ function renderHistory() {
   el.historyEmpty.hidden = true;
   el.historyList.innerHTML = "";
   for (const item of filtered) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "historyTile";
-    button.innerHTML = `
+    const tile = document.createElement("div");
+    tile.className = "historyTile";
+
+    const selectBtn = document.createElement("button");
+    selectBtn.type = "button";
+    selectBtn.className = "historyTileSelect";
+    selectBtn.innerHTML = `
       <div class="historyTileMeta"></div>
       <h3 class="historyTileTitle"></h3>
       <p class="historyTilePreview"></p>
     `;
-    button.querySelector(".historyTileMeta")!.textContent = formatTimestamp(item.createdAt);
-    button.querySelector(".historyTileTitle")!.textContent = item.title;
-    (button.querySelector(".historyTilePreview") as HTMLElement).textContent =
+    selectBtn.querySelector(".historyTileMeta")!.textContent = formatTimestamp(item.createdAt);
+    selectBtn.querySelector(".historyTileTitle")!.textContent = item.title;
+    (selectBtn.querySelector(".historyTilePreview") as HTMLElement).textContent =
       item.preview || "(No preview text available)";
-    button.addEventListener("click", () => {
+    selectBtn.addEventListener("click", () => {
+      selectBtn.blur();
       state.activeId = item.id;
       setPreviewMarkdown(item.markdown);
       void saveState(state);
       renderHistory();
       showTab("convert");
     });
-    el.historyList.appendChild(button);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "historyTileDelete";
+    deleteBtn.setAttribute("aria-label", "Delete this history item");
+    deleteBtn.innerHTML = `${TRASH_ICON_SVG}<span class="historyTileDeleteLabel">Delete</span>`;
+    deleteBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void handleDeleteHistoryItem(item.id);
+    });
+
+    tile.appendChild(selectBtn);
+    tile.appendChild(deleteBtn);
+    el.historyList.appendChild(tile);
   }
 }
 
@@ -305,6 +324,26 @@ async function handleClearHistory() {
   await saveState(state);
   el.historySearch.value = "";
   setPreviewMarkdown("");
+  renderHistory();
+}
+
+async function handleDeleteHistoryItem(id: string) {
+  const exists = state.items.some((item) => item.id === id);
+  if (!exists) {
+    return;
+  }
+  const confirmed = window.confirm(
+    "Remove this conversion from history? This cannot be undone.",
+  );
+  if (!confirmed) {
+    return;
+  }
+  state.items = state.items.filter((item) => item.id !== id);
+  if (state.activeId === id) {
+    state.activeId = null;
+    setPreviewMarkdown("");
+  }
+  await saveState(state);
   renderHistory();
 }
 
@@ -380,11 +419,22 @@ async function handleConvert() {
   }
 }
 
-function handleCopy() {
+function triggerCopyButtonFlash() {
+  el.copyBtn.classList.remove("ghostButton--copyFlash");
+  el.copyBtn.offsetWidth;
+  el.copyBtn.classList.add("ghostButton--copyFlash");
+}
+
+async function handleCopy() {
   if (!previewPlain.trim()) {
     return;
   }
-  void navigator.clipboard.writeText(previewPlain);
+  triggerCopyButtonFlash();
+  try {
+    await navigator.clipboard.writeText(previewPlain);
+  } catch {
+    el.copyBtn.classList.remove("ghostButton--copyFlash");
+  }
 }
 
 function handleDownload() {
@@ -413,7 +463,12 @@ el.tabHistory.addEventListener("click", () => showTab("history"));
 el.historySearch.addEventListener("input", () => renderHistory());
 el.clearHistoryBtn.addEventListener("click", () => void handleClearHistory());
 el.convertBtn.addEventListener("click", () => void handleConvert());
-el.copyBtn.addEventListener("click", () => handleCopy());
+el.copyBtn.addEventListener("click", () => void handleCopy());
+el.copyBtn.addEventListener("animationend", (event) => {
+  if (event.animationName === "copyButtonFlash") {
+    el.copyBtn.classList.remove("ghostButton--copyFlash");
+  }
+});
 el.downloadBtn.addEventListener("click", () => handleDownload());
 
 void (async () => {

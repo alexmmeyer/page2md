@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
@@ -18,8 +19,48 @@ interface OutputPaneProps {
   report: ExtractionReport | null;
   outputSourceType: ConversionSourceType | null;
   title: string;
-  onCopy: () => void;
+  onCopy: () => void | Promise<void>;
   onDownload: () => void;
+}
+
+interface OutputPaneActionRowProps {
+  hasPreview: boolean;
+  onCopy: () => void | Promise<void>;
+  onDownload: () => void;
+}
+
+function OutputPaneActionRow({ hasPreview, onCopy, onDownload }: OutputPaneActionRowProps) {
+  /** Bumps on each Copy click so the button remounts and `copyButtonFlash` always runs from 0%. */
+  const [copyAnimKey, setCopyAnimKey] = useState(0);
+
+  async function handleCopyClick() {
+    if (!hasPreview) {
+      return;
+    }
+    setCopyAnimKey((key) => key + 1);
+    try {
+      await onCopy();
+    } catch {
+      setCopyAnimKey(0);
+    }
+  }
+
+  return (
+    <div className="actionRow">
+      <button
+        key={copyAnimKey}
+        className={`ghostButton${copyAnimKey > 0 ? " ghostButton--copyFlash" : ""}`}
+        type="button"
+        onClick={handleCopyClick}
+        disabled={!hasPreview}
+      >
+        Copy
+      </button>
+      <button className="ghostButton" type="button" onClick={onDownload} disabled={!hasPreview}>
+        Download
+      </button>
+    </div>
+  );
 }
 
 function prettyJson(json: ConversionJsonOutput | null): string {
@@ -78,19 +119,7 @@ export function OutputPane({
           <h2>Preview</h2>
           <p className="muted">{title || "Run conversion to see output."}</p>
         </div>
-        <div className="actionRow">
-          <button className="ghostButton" type="button" onClick={onCopy} disabled={!hasPreview}>
-            Copy
-          </button>
-          <button
-            className="ghostButton"
-            type="button"
-            onClick={onDownload}
-            disabled={!hasPreview}
-          >
-            Download
-          </button>
-        </div>
+        <OutputPaneActionRow hasPreview={hasPreview} onCopy={onCopy} onDownload={onDownload} />
       </div>
 
       <div className={hasReport ? "previewWrap" : "previewWrap previewWrapFill"}>
@@ -148,4 +177,3 @@ export function OutputPane({
     </section>
   );
 }
-

@@ -149,6 +149,34 @@ a:visited {
   color: var(--muted);
 }
 
+.fieldLabelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.fieldLabelRow .fieldLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.clearFieldButton {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: #1a2330;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.clearFieldButton:hover {
+  color: var(--text);
+}
+
 .input,
 .textarea,
 .select {
@@ -175,39 +203,6 @@ a:visited {
 
 .inputWrap {
   position: relative;
-}
-
-.input.withClear {
-  padding-right: 36px;
-}
-
-.textarea.withClear {
-  padding-right: 36px;
-}
-
-.clearInputButton {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  border: 1px solid var(--panel-border);
-  background: #1a2330;
-  color: var(--muted);
-  cursor: pointer;
-  line-height: 1;
-  font-size: 14px;
-}
-
-.clearInputButton:hover {
-  color: var(--text);
-}
-
-.clearInputButtonTop {
-  top: 12px;
-  transform: none;
 }
 
 .textarea {
@@ -342,6 +337,29 @@ a:visited {
   cursor: pointer;
 }
 
+@keyframes copyButtonFlash {
+  0% {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.35);
+    background-color: rgba(88, 166, 255, 0.07);
+  }
+  100% {
+    border-color: var(--panel-border);
+    box-shadow: none;
+    background-color: #0f1620;
+  }
+}
+
+.ghostButton--copyFlash {
+  animation: copyButtonFlash 1.5s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghostButton--copyFlash {
+    animation-duration: 0.35s;
+  }
+}
+
 .previewWrap {
   border: 1px solid #252f3b;
   border-radius: 12px;
@@ -407,6 +425,33 @@ a:visited {
   flex-direction: column;
 }
 
+.clearHistoryButton {
+  flex-shrink: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.clearHistoryButtonBlock {
+  width: 100%;
+  padding: 8px 10px;
+}
+
+.clearHistoryButton:hover {
+  color: var(--danger);
+  border-color: rgba(255, 123, 114, 0.45);
+  background: rgba(255, 123, 114, 0.06);
+}
+
+.historyPanelFooter {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .historyList {
   flex: 1;
   min-height: 0;
@@ -417,22 +462,84 @@ a:visited {
 }
 
 .historyTile {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
   border: 1px solid var(--panel-border);
   background: #0f1620;
   border-radius: 10px;
   color: var(--text);
-  text-align: left;
-  padding: 10px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  padding: 0;
+  overflow: hidden;
 }
 
 .historyTile:hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.35);
   background: rgba(88, 166, 255, 0.07);
+}
+
+.historyTileSelect {
+  width: 100%;
+  text-align: left;
+  padding: 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.historyTile:hover .historyTileSelect,
+.historyTile:focus-within .historyTileSelect {
+  border-radius: 10px 10px 0 0;
+}
+
+.historyTileDelete {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: none;
+  border-top: 1px solid var(--panel-border);
+  border-radius: 0 0 10px 10px;
+  background: rgba(11, 17, 24, 0.55);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.historyTileDeleteLabel {
+  line-height: 1;
+}
+
+.historyTile:hover .historyTileDelete,
+.historyTile:focus-within .historyTileDelete {
+  display: flex;
+}
+
+.historyTileDelete:hover {
+  color: var(--danger);
+  background: rgba(255, 123, 114, 0.1);
+}
+
+@media (hover: none) {
+  .historyTileSelect {
+    border-radius: 10px 10px 0 0;
+  }
+
+  .historyTileDelete {
+    display: flex;
+  }
 }
 
 .historyTileMeta {
