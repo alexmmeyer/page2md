@@ -3,7 +3,11 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-import type { ConversionJsonOutput, ExtractionReport, SourceType } from "@/lib/types/conversion";
+import type {
+  ConversionJsonOutput,
+  ConversionSourceType,
+  ExtractionReport,
+} from "@/lib/types/conversion";
 
 type OutputFormat = "markdown" | "json";
 
@@ -12,7 +16,7 @@ interface OutputPaneProps {
   json: ConversionJsonOutput | null;
   outputFormat: OutputFormat;
   report: ExtractionReport | null;
-  outputSourceType: SourceType | null;
+  outputSourceType: ConversionSourceType | null;
   title: string;
   onCopy: () => void;
   onDownload: () => void;
@@ -59,7 +63,7 @@ export function OutputPane({
   const hasPreview = previewValue.trim().length > 0;
   const showCounts = Boolean(
     report &&
-      outputSourceType === "url" &&
+      (outputSourceType === "url" || outputSourceType === "tab") &&
       ((report.collapsiblesAttempted ?? 0) > 0 ||
         (report.collapsiblesOpened ?? 0) > 0 ||
         (report.sequentialGroupsDetected ?? 0) > 0),
@@ -99,7 +103,7 @@ export function OutputPane({
             fontSize: "13px",
             lineHeight: "1.6",
             fontFamily:
-              "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace",
+              "var(--font-space-grotesk), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace",
             minHeight: hasReport ? 400 : "100%",
             maxHeight: hasReport ? 560 : "100%",
             height: hasReport ? undefined : "100%",

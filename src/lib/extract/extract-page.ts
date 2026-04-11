@@ -1,16 +1,15 @@
 import sparticuzChromium from "@sparticuz/chromium";
 import { chromium, type Browser } from "playwright-core";
 
-interface ExtractedContent {
-  title: string;
-  html: string;
-  report: {
-    collapsiblesAttempted: number;
-    collapsiblesOpened: number;
-    sequentialGroupsDetected: number;
-    warnings: string[];
-  };
-}
+import type { DomExtractedContent } from "./dom-main-content";
+
+type ExtractedContent = DomExtractedContent;
+
+type ExtractOptions = {
+  sourceType: "url" | "html";
+  source: string;
+  mainContentOnly: boolean;
+};
 
 const MAIN_CANDIDATE_SELECTORS = [
   "main",
@@ -21,6 +20,20 @@ const MAIN_CANDIDATE_SELECTORS = [
   ".main-content",
   ".markdown-body",
   ".docs-content",
+  "#__docusaurus",
+  ".theme-doc-markdown",
+  ".markdown-section",
+  "#swagger-ui",
+  ".swagger-ui",
+  ".swagger-ui-wrap",
+  ".redoc-wrap",
+  "redoc",
+  ".rm-Article",
+  ".rm-Markdown",
+  ".api-content",
+  ".reference-content",
+  "[class*='reference-layout']",
+  "[class*='DocPage']",
 ];
 
 const EXCLUDED_SELECTORS = [
@@ -39,12 +52,6 @@ const EXCLUDED_SELECTORS = [
   "[aria-label*='table of contents' i]",
   "[aria-label*='on this page' i]",
 ];
-
-type ExtractOptions = {
-  sourceType: "url" | "html";
-  source: string;
-  mainContentOnly: boolean;
-};
 
 async function launchBrowser(): Promise<Browser> {
   if (process.env.VERCEL === "1") {
@@ -80,6 +87,7 @@ async function launchBrowser(): Promise<Browser> {
   }
 }
 
+/** Keep `page.evaluate` body aligned with `dom-main-content.ts` (Chrome extension). */
 export async function extractPageContent({
   sourceType,
   source,
@@ -105,8 +113,7 @@ export async function extractPageContent({
         let collapsiblesOpened = 0;
         let sequentialGroupsDetected = 0;
 
-        const sleep = (ms: number) =>
-          new Promise((resolve) => setTimeout(resolve, ms));
+        const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
         const mainCandidates = candidateSelectors
           .flatMap((selector) =>
@@ -152,7 +159,6 @@ export async function extractPageContent({
           if (!details.open) {
             details.open = true;
           }
-          // Already-open and newly-open details both count as opened for users.
           collapsiblesOpened += 1;
         }
 
@@ -172,9 +178,9 @@ export async function extractPageContent({
             !isBulkToggle &&
             (expanded === "false" ||
               expanded === "true" ||
-            text.includes("show more") ||
-            text.includes("expand") ||
-            text.includes("open"))
+              text.includes("show more") ||
+              text.includes("expand") ||
+              text.includes("open"))
           );
         });
         const uniqueButtons = Array.from(new Set(buttons));
@@ -226,19 +232,32 @@ export async function extractPageContent({
           await countButtonExpansion(btn);
         }
 
-        const targetElement = scopeElement;
-        const clone = targetElement.cloneNode(true) as HTMLElement;
+        const stripExcluded = (root: HTMLElement): string => {
+          const cloneLocal = root.cloneNode(true) as HTMLElement;
+          for (const selector of excludedSelectors) {
+            const found = cloneLocal.querySelectorAll(selector);
+            for (const node of found) {
+              node.remove();
+            }
+          }
+          return cloneLocal.innerHTML;
+        };
 
-        for (const selector of excludedSelectors) {
-          const found = clone.querySelectorAll(selector);
-          for (const node of found) {
-            node.remove();
+        let html = stripExcluded(scopeElement);
+        const MIN_MEANINGFUL_HTML = 120;
+        if (html.trim().length < MIN_MEANINGFUL_HTML && document.body) {
+          const bodyHtml = stripExcluded(document.body);
+          if (bodyHtml.trim().length > html.trim().length) {
+            html = bodyHtml;
+            warnings.push(
+              "Main content region was very short; used a broader slice of the page (extra chrome may appear).",
+            );
           }
         }
 
         return {
           title: document.title || "Untitled Page",
-          html: clone.innerHTML,
+          html,
           report: {
             collapsiblesAttempted,
             collapsiblesOpened,
@@ -260,4 +279,3 @@ export async function extractPageContent({
     await browser.close();
   }
 }
-

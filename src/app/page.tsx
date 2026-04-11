@@ -8,6 +8,7 @@ import { OutputPane } from "@/components/OutputPane";
 import type {
   ConversionJsonOutput,
   ConversionMeta,
+  ConversionSourceType,
   OutputFormat,
   ConversionResponse,
   ExtractionReport,
@@ -94,6 +95,35 @@ function plainTitle(value: string): string {
     .trim();
 }
 
+function ChromeExtensionCallout() {
+  const storeUrl = process.env.NEXT_PUBLIC_CHROME_WEB_STORE_URL?.trim();
+
+  if (storeUrl) {
+    return (
+      <a
+        className="ghostButton extensionInstallBtn"
+        href={storeUrl}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Install Chrome extension
+      </a>
+    );
+  }
+
+  return (
+    <details className="extensionDevHint">
+      <summary>Chrome extension</summary>
+      <p className="extensionDevBody muted">
+        Run <code className="inlineCode">npm run build:extension</code>. In Chrome, open{" "}
+        <code className="inlineCode">chrome://extensions</code>, turn on Developer mode, choose{" "}
+        <strong>Load unpacked</strong>, and select the <code className="inlineCode">extension/dist</code>{" "}
+        folder from this project.
+      </p>
+    </details>
+  );
+}
+
 function resolveDisplayedOutput(
   requestedFormat: OutputFormat,
   markdownValue: string,
@@ -125,7 +155,7 @@ export default function Home() {
   const [markdown, setMarkdown] = useState("");
   const [json, setJson] = useState<ConversionJsonOutput | null>(null);
   const [report, setReport] = useState<ExtractionReport | null>(null);
-  const [outputSourceType, setOutputSourceType] = useState<SourceType | null>(null);
+  const [outputSourceType, setOutputSourceType] = useState<ConversionSourceType | null>(null);
   const [title, setTitle] = useState("");
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
@@ -332,9 +362,12 @@ export default function Home() {
 
   return (
     <main className="appShell">
-      <header className="header">
-        <h1>page2md</h1>
-        <p>Convert rich docs pages into markdown in one shot.</p>
+      <header className="header headerWithActions">
+        <div>
+          <h1>page2md</h1>
+          <p>Convert rich docs pages into markdown in one shot.</p>
+        </div>
+        <ChromeExtensionCallout />
       </header>
 
       <div className="grid">

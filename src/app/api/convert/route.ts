@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { htmlToMarkdown } from "@/lib/convert/html-to-markdown";
+import { markdownWithYamlFrontmatter } from "@/lib/convert/markdown-frontmatter";
 import { emitJsonOutput } from "@/lib/emit/json-emitter";
 import { extractPageContent } from "@/lib/extract/extract-page";
 import type { ConversionResponse } from "@/lib/types/conversion";
@@ -74,19 +75,7 @@ export async function POST(request: Request) {
       report = extracted.report;
     }
 
-    const markdown =
-      meta.sourceType === "paste"
-        ? markdownBody
-        : [
-            "---",
-            `title: "${meta.title.replaceAll('"', '\\"')}"`,
-            `sourceType: "${meta.sourceType}"`,
-            `source: "${meta.source.replaceAll('"', '\\"')}"`,
-            `convertedAt: "${meta.convertedAt}"`,
-            "---",
-            "",
-            markdownBody,
-          ].join("\n");
+    const markdown = markdownWithYamlFrontmatter(markdownBody, meta);
 
     const response: ConversionResponse = {
       outputFormat: payload.outputFormat,

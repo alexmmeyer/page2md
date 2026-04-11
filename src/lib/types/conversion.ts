@@ -1,4 +1,6 @@
 export type SourceType = "url" | "html" | "paste";
+/** Includes extension-only `"tab"` (current browser page). */
+export type ConversionSourceType = SourceType | "tab";
 export type OutputFormat = "markdown" | "json";
 
 export interface ConversionRequest {
@@ -16,7 +18,7 @@ export interface ExtractionReport {
 }
 
 export interface ConversionMeta {
-  sourceType: SourceType;
+  sourceType: ConversionSourceType;
   source: string;
   title: string;
   convertedAt: string;

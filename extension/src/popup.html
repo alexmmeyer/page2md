@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="popupRoot" aria-label="Page2MD">
+      <nav class="tabBar" role="tablist">
+        <button type="button" class="tab active" role="tab" id="tab-convert" aria-selected="true">
+          Convert
+        </button>
+        <button type="button" class="tab" role="tab" id="tab-history" aria-selected="false">
+          History
+        </button>
+      </nav>
+
+      <section id="panel-convert" class="panel" role="tabpanel">
+        <p id="error" class="errorText" hidden></p>
+        <button type="button" id="convertBtn" class="primaryButton">Convert this page</button>
+        <div
+          id="preview"
+          class="previewArea previewArea--empty"
+          role="region"
+          aria-label="Markdown output"
+        ></div>
+        <div class="outputActions">
+          <button type="button" id="copyBtn" class="ghostButton" disabled>Copy</button>
+          <button type="button" id="downloadBtn" class="ghostButton" disabled>
+            Download .md
+          </button>
+        </div>
+      </section>
+
+      <section id="panel-history" class="panel hidden" role="tabpanel" hidden>
+        <label class="historySearchLabel" for="historySearch">Search history</label>
+        <input
+          id="historySearch"
+          class="historySearch"
+          type="search"
+          placeholder="Search by date, title, or content..."
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Filter history by date, title, or content"
+        />
+        <div id="historyEmpty" class="muted">No conversions yet.</div>
+        <div id="historyList" class="historyList"></div>
+        <button type="button" id="clearHistoryBtn" class="clearHistoryButton" disabled>
+          Clear all history
+        </button>
+      </section>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

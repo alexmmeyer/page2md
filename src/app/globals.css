@@ -26,12 +26,12 @@ body {
 body {
   background: radial-gradient(circle at top, #111926 0%, var(--bg) 45%);
   color: var(--text);
-  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  font-family: var(--font-ibm-plex-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Native controls often ignore body font; inherit so Space Grotesk applies everywhere */
+/* Native controls often ignore body font; inherit so IBM Plex Sans applies everywhere */
 button,
 input,
 select,
@@ -66,6 +66,49 @@ a:visited {
 
 .header p {
   color: var(--muted);
+}
+
+.headerWithActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.extensionInstallBtn {
+  flex-shrink: 0;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.extensionDevHint {
+  max-width: min(420px, 100%);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--panel);
+}
+
+.extensionDevHint summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+  list-style-position: outside;
+}
+
+.extensionDevBody {
+  margin-top: 10px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.inlineCode {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+  color: var(--text);
 }
 
 .grid {
