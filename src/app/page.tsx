@@ -197,8 +197,36 @@ function createHistoryBridge(): HistoryBridgeApi {
   return { requestState, pushState, subscribeToChanges };
 }
 
-function ChromeExtensionCallout() {
+const PAGE2MD_GITHUB_REPO_URL = "https://github.com/alexmmeyer/page2md";
+
+/** Desktop Google Chrome only (extensions are not supported in mobile browsers). */
+function isGoogleChromeDesktop(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+  const ua = navigator.userAgent;
+  const vendor = navigator.vendor ?? "";
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) {
+    return false;
+  }
+  const looksLikeGoogleChrome = /Chrome\//.test(ua) && vendor.includes("Google Inc");
+  const isEdge = /Edg\//.test(ua);
+  const isOpera = /OPR\//.test(ua);
+  return looksLikeGoogleChrome && !isEdge && !isOpera;
+}
+
+function ChromeExtensionCallout({
+  isChromeBrowser,
+  extensionPresent,
+}: {
+  isChromeBrowser: boolean;
+  extensionPresent: boolean | null;
+}) {
   const storeUrl = process.env.NEXT_PUBLIC_CHROME_WEB_STORE_URL?.trim();
+
+  if (!isChromeBrowser || extensionPresent !== false) {
+    return null;
+  }
 
   if (storeUrl) {
     return (
@@ -208,16 +236,20 @@ function ChromeExtensionCallout() {
         target="_blank"
         rel="noreferrer"
       >
-        Install Chrome extension
+        Get the chrome extension
       </a>
     );
   }
 
   return (
     <details className="extensionDevHint">
-      <summary>Chrome extension (Load unpacked)</summary>
+      <summary>Get the chrome extension</summary>
       <p className="extensionDevBody muted">
-        Clone or pull the repo, then run <code className="inlineCode">npm install</code> and{" "}
+        Clone or pull from the{" "}
+        <a href={PAGE2MD_GITHUB_REPO_URL} target="_blank" rel="noreferrer">
+          page2md GitHub repository
+        </a>
+        , then run <code className="inlineCode">npm install</code> and{" "}
         <code className="inlineCode">npm run build:extension</code>. In Chrome, open{" "}
         <code className="inlineCode">chrome://extensions</code>, turn on Developer mode, click{" "}
         <strong>Load unpacked</strong>, and select the <code className="inlineCode">extension/dist</code>{" "}
@@ -264,6 +296,8 @@ export default function Home() {
   const historyBridgeRef = useRef<HistoryBridgeApi | null>(null);
   const syncingFromExtensionRef = useRef(false);
   const historyRevisionRef = useRef(0);
+  const [isChromeBrowser, setIsChromeBrowser] = useState(false);
+  const [extensionPresent, setExtensionPresent] = useState<boolean | null>(null);
 
   const displayedOutput = useMemo(
     () => resolveDisplayedOutput(outputFormat, markdown, json),
@@ -272,6 +306,7 @@ export default function Home() {
   const source = sourcesByType[sourceType];
 
   useEffect(() => {
+    setIsChromeBrowser(isGoogleChromeDesktop());
     historyBridgeRef.current = createHistoryBridge();
 
     const fallbackRaw = localStorage.getItem(WEB_FALLBACK_HISTORY_STORAGE_KEY);
@@ -290,6 +325,7 @@ export default function Home() {
 
     void (async () => {
       const extensionState = await historyBridgeRef.current?.requestState();
+      setExtensionPresent(extensionState !== null);
       if (!extensionState) {
         return;
       }
@@ -302,6 +338,7 @@ export default function Home() {
     })();
 
     const unsubscribe = historyBridgeRef.current.subscribeToChanges((nextState) => {
+      setExtensionPresent(true);
       if (nextState.revision < historyRevisionRef.current) {
         return;
       }
@@ -520,7 +557,10 @@ export default function Home() {
           <h1>page2md</h1>
           <p>Convert rich docs pages into markdown in one shot.</p>
         </div>
-        <ChromeExtensionCallout />
+        <ChromeExtensionCallout
+          isChromeBrowser={isChromeBrowser}
+          extensionPresent={extensionPresent}
+        />
       </header>
 
       <div className="grid">
