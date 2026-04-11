@@ -113,12 +113,13 @@ function ChromeExtensionCallout() {
 
   return (
     <details className="extensionDevHint">
-      <summary>Chrome extension</summary>
+      <summary>Chrome extension (Load unpacked)</summary>
       <p className="extensionDevBody muted">
-        Run <code className="inlineCode">npm run build:extension</code>. In Chrome, open{" "}
-        <code className="inlineCode">chrome://extensions</code>, turn on Developer mode, choose{" "}
+        Clone or pull the repo, then run <code className="inlineCode">npm install</code> and{" "}
+        <code className="inlineCode">npm run build:extension</code>. In Chrome, open{" "}
+        <code className="inlineCode">chrome://extensions</code>, turn on Developer mode, click{" "}
         <strong>Load unpacked</strong>, and select the <code className="inlineCode">extension/dist</code>{" "}
-        folder from this project.
+        folder. Rebuild and use Reload on the extension card after updates.
       </p>
     </details>
   );

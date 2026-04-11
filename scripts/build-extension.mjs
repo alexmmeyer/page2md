@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { copyFileSync, mkdirSync, existsSync } from "node:fs";
+import { copyFileSync, mkdirSync, existsSync, cpSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,5 +32,11 @@ for (const file of ["popup.html", "popup.css"]) {
   copyFileSync(join(src, file), join(dist, file));
 }
 copyFileSync(join(extRoot, "manifest.json"), join(dist, "manifest.json"));
+
+const iconsSrc = join(extRoot, "icons");
+const iconsDist = join(dist, "icons");
+if (existsSync(iconsSrc)) {
+  cpSync(iconsSrc, iconsDist, { recursive: true });
+}
 
 console.log("extension/dist ready — load unpacked from extension/dist");
