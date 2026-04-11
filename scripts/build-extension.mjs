@@ -14,9 +14,9 @@ if (!existsSync(dist)) {
 }
 
 await esbuild.build({
-  entryPoints: [join(src, "popup.ts")],
+  entryPoints: [join(src, "popup.ts"), join(src, "history-bridge.ts")],
   bundle: true,
-  outfile: join(dist, "popup.js"),
+  outdir: dist,
   format: "iife",
   platform: "browser",
   // keepNames injects __name() calls inside bundled functions; those break

@@ -1,34 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ConverterForm } from "@/components/ConverterForm";
 import { HistoryPane } from "@/components/HistoryPane";
 import { OutputPane } from "@/components/OutputPane";
+import {
+  LEGACY_WEB_SESSION_HISTORY_STORAGE_KEY,
+  SHARED_HISTORY_MAX_ITEMS,
+  WEB_FALLBACK_HISTORY_STORAGE_KEY,
+  normalizeSharedHistoryState,
+  type SharedHistoryItem,
+} from "@/lib/history/shared-history";
 import type {
   ConversionJsonOutput,
-  ConversionMeta,
-  ConversionSourceType,
-  OutputFormat,
   ConversionResponse,
+  ConversionSourceType,
   ExtractionReport,
+  OutputFormat,
   SourceType,
 } from "@/lib/types/conversion";
-
-interface HistoryItem {
-  id: string;
-  createdAt: string;
-  sourceType: SourceType;
-  outputFormat: OutputFormat;
-  title: string;
-  preview: string;
-  markdown?: string;
-  json?: ConversionJsonOutput;
-  report: ExtractionReport;
-  meta: ConversionMeta;
-}
-
-const HISTORY_STORAGE_KEY = "page2md-session-history";
 
 function stripFrontmatter(markdownText: string): string {
   if (!markdownText.startsWith("---\n")) {
@@ -95,6 +86,118 @@ function plainTitle(value: string): string {
     .trim();
 }
 
+interface BridgeMessage {
+  source: string;
+  channel: string;
+  type: string;
+  requestId?: string;
+  payload?: unknown;
+}
+
+interface HistoryBridgeApi {
+  requestState: () => Promise<SharedHistoryItem[] | null>;
+  pushState: (items: SharedHistoryItem[]) => void;
+  subscribeToChanges: (onChanged: (items: SharedHistoryItem[]) => void) => () => void;
+}
+
+const BRIDGE_SOURCE_WEB = "page2md-web";
+const BRIDGE_SOURCE_EXTENSION = "page2md-extension";
+const BRIDGE_CHANNEL = "page2md-history-bridge";
+const MSG_GET_HISTORY = "PAGE2MD_GET_HISTORY";
+const MSG_SET_HISTORY = "PAGE2MD_SET_HISTORY";
+const MSG_HISTORY_RESPONSE = "PAGE2MD_HISTORY_RESPONSE";
+const MSG_HISTORY_CHANGED = "PAGE2MD_HISTORY_CHANGED";
+
+function createHistoryBridge(): HistoryBridgeApi {
+  function isExtensionBridgeMessage(value: unknown): value is BridgeMessage {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+    const message = value as Partial<BridgeMessage>;
+    return (
+      message.source === BRIDGE_SOURCE_EXTENSION &&
+      message.channel === BRIDGE_CHANNEL &&
+      typeof message.type === "string"
+    );
+  }
+
+  function normalizeItems(payload: unknown): SharedHistoryItem[] {
+    return normalizeSharedHistoryState(payload).items;
+  }
+
+  async function requestState(): Promise<SharedHistoryItem[] | null> {
+    const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    return new Promise((resolve) => {
+      const timeout = window.setTimeout(() => {
+        window.removeEventListener("message", onMessage);
+        resolve(null);
+      }, 450);
+
+      function onMessage(event: MessageEvent) {
+        if (event.source !== window || event.origin !== window.location.origin) {
+          return;
+        }
+        if (!isExtensionBridgeMessage(event.data)) {
+          return;
+        }
+        if (event.data.type !== MSG_HISTORY_RESPONSE || event.data.requestId !== requestId) {
+          return;
+        }
+
+        window.clearTimeout(timeout);
+        window.removeEventListener("message", onMessage);
+        resolve(normalizeItems(event.data.payload));
+      }
+
+      window.addEventListener("message", onMessage);
+      window.postMessage(
+        {
+          source: BRIDGE_SOURCE_WEB,
+          channel: BRIDGE_CHANNEL,
+          type: MSG_GET_HISTORY,
+          requestId,
+        } satisfies BridgeMessage,
+        window.location.origin,
+      );
+    });
+  }
+
+  function pushState(items: SharedHistoryItem[]) {
+    window.postMessage(
+      {
+        source: BRIDGE_SOURCE_WEB,
+        channel: BRIDGE_CHANNEL,
+        type: MSG_SET_HISTORY,
+        payload: {
+          items,
+          activeId: items[0]?.id ?? null,
+        },
+      } satisfies BridgeMessage,
+      window.location.origin,
+    );
+  }
+
+  function subscribeToChanges(onChanged: (items: SharedHistoryItem[]) => void): () => void {
+    function onMessage(event: MessageEvent) {
+      if (event.source !== window || event.origin !== window.location.origin) {
+        return;
+      }
+      if (!isExtensionBridgeMessage(event.data)) {
+        return;
+      }
+      if (event.data.type !== MSG_HISTORY_CHANGED) {
+        return;
+      }
+      onChanged(normalizeItems(event.data.payload));
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }
+
+  return { requestState, pushState, subscribeToChanges };
+}
+
 function ChromeExtensionCallout() {
   const storeUrl = process.env.NEXT_PUBLIC_CHROME_WEB_STORE_URL?.trim();
 
@@ -158,7 +261,9 @@ export default function Home() {
   const [report, setReport] = useState<ExtractionReport | null>(null);
   const [outputSourceType, setOutputSourceType] = useState<ConversionSourceType | null>(null);
   const [title, setTitle] = useState("");
-  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [historyItems, setHistoryItems] = useState<SharedHistoryItem[]>([]);
+  const historyBridgeRef = useRef<HistoryBridgeApi | null>(null);
+  const syncingFromExtensionRef = useRef(false);
 
   const displayedOutput = useMemo(
     () => resolveDisplayedOutput(outputFormat, markdown, json),
@@ -167,35 +272,65 @@ export default function Home() {
   const source = sourcesByType[sourceType];
 
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(HISTORY_STORAGE_KEY);
-      if (!raw) {
+    historyBridgeRef.current = createHistoryBridge();
+
+    const fallbackRaw = localStorage.getItem(WEB_FALLBACK_HISTORY_STORAGE_KEY);
+    const legacyRaw = sessionStorage.getItem(LEGACY_WEB_SESSION_HISTORY_STORAGE_KEY);
+    const initialRaw = fallbackRaw ?? legacyRaw;
+
+    if (initialRaw) {
+      try {
+        const normalized = normalizeSharedHistoryState(JSON.parse(initialRaw));
+        setHistoryItems(normalized.items);
+      } catch {
+        // Ignore invalid local/session payload and start with empty history.
+      }
+    }
+
+    void (async () => {
+      const extensionItems = await historyBridgeRef.current?.requestState();
+      if (!extensionItems) {
         return;
       }
+      syncingFromExtensionRef.current = true;
+      setHistoryItems(extensionItems);
+    })();
 
-      const parsed = JSON.parse(raw) as {
-        items?: HistoryItem[];
-      };
+    const unsubscribe = historyBridgeRef.current.subscribeToChanges((items) => {
+      syncingFromExtensionRef.current = true;
+      setHistoryItems((previous) => {
+        const nextSerialized = JSON.stringify(items);
+        const previousSerialized = JSON.stringify(previous);
+        return nextSerialized === previousSerialized ? previous : items;
+      });
+    });
 
-      const restoredItems = Array.isArray(parsed.items) ? parsed.items : [];
-
-      setHistoryItems(restoredItems);
-    } catch {
-      // Ignore invalid session payload and start with empty history.
-    }
+    return () => {
+      unsubscribe();
+      historyBridgeRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
     try {
-      sessionStorage.setItem(
-        HISTORY_STORAGE_KEY,
+      localStorage.setItem(
+        WEB_FALLBACK_HISTORY_STORAGE_KEY,
         JSON.stringify({
           items: historyItems,
+          activeId: historyItems[0]?.id ?? null,
         }),
       );
+      sessionStorage.removeItem(LEGACY_WEB_SESSION_HISTORY_STORAGE_KEY);
     } catch {
-      // Ignore sessionStorage write failures.
+      // Ignore localStorage write failures.
     }
+
+    if (syncingFromExtensionRef.current) {
+      syncingFromExtensionRef.current = false;
+      return;
+    }
+
+    historyBridgeRef.current?.pushState(historyItems);
   }, [historyItems]);
 
   function setSource(value: string) {
@@ -244,7 +379,7 @@ export default function Home() {
       const baseMarkdown = conversion.markdown ?? conversion.json?.markdown ?? "";
       const heading = firstHeadingFromMarkdown(baseMarkdown);
       const itemTitle = plainTitle(heading || conversion.meta?.title || "Untitled conversion");
-      const historyItem: HistoryItem = {
+      const historyItem: SharedHistoryItem = {
         id:
           typeof crypto !== "undefined" && "randomUUID" in crypto
             ? crypto.randomUUID()
@@ -259,7 +394,9 @@ export default function Home() {
         report: conversion.report,
         meta: conversion.meta,
       };
-      setHistoryItems((previous) => [historyItem, ...previous]);
+      setHistoryItems((previous) =>
+        [historyItem, ...previous].slice(0, SHARED_HISTORY_MAX_ITEMS),
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unexpected error.";
       setError(message);
@@ -268,7 +405,7 @@ export default function Home() {
     }
   }
 
-  function handleSelectHistory(item: HistoryItem) {
+  function handleSelectHistory(item: SharedHistoryItem) {
     setMarkdown(item.markdown ?? "");
     setJson(item.json ?? null);
     setReport(item.report);

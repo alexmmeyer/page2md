@@ -18,16 +18,18 @@
 }
 
 /*
-  Chrome’s extension popup is a rectangular OS window; border-radius on html/body
-  often does not round the outer chrome. clip-path + matching html background is
-  the usual best-effort so the page content paints inside a rounded mask.
+  Extension popups are drawn on a native window that often has a light default
+  background. Avoid clip-path / outer border-radius on html: they leave
+  subpixel gaps where that background shows through as a white “frame”.
 */
 html {
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background-color: var(--bg);
   background: var(--bg);
-  border-radius: 14px;
   overflow: hidden;
-  overflow: clip;
-  clip-path: inset(0 round 14px);
 }
 
 body {
@@ -36,14 +38,17 @@ body {
   min-height: 560px;
   max-height: 560px;
   margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
   display: flex;
   flex-direction: column;
   font-family: "IBM Plex Sans", system-ui, sans-serif;
   font-size: 13px;
+  background-color: var(--bg);
   background: radial-gradient(circle at top, #111926 0%, var(--bg) 45%);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
-  border-radius: 14px;
   overflow: hidden;
 }
 
@@ -462,9 +467,16 @@ body {
 }
 
 .historyTileMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 11px;
   color: var(--muted);
   margin-bottom: 6px;
+}
+
+.historyTileMetaFlow {
+  white-space: nowrap;
 }
 
 .historyTileTitle {

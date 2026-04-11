@@ -19,5 +19,12 @@
       "128": "icons/icon-128.png"
     }
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["history-bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
   "permissions": ["activeTab", "scripting", "storage"]
 }

@@ -4,26 +4,19 @@ import {
   extractDomMainContent,
   type DomExtractedContent,
 } from "@/lib/extract/dom-main-content";
-import type { ConversionMeta, ExtractionReport } from "@/lib/types/conversion";
+import type { ConversionMeta } from "@/lib/types/conversion";
+import {
+  SHARED_HISTORY_MAX_ITEMS,
+  SHARED_HISTORY_STORAGE_KEY,
+  normalizeSharedHistoryState,
+  type SharedHistoryItem,
+} from "@/lib/history/shared-history";
 
 import { highlightMarkdownForPreview } from "./markdown-highlight";
 
-const STORAGE_KEY = "page2md-extension-v1";
-const MAX_HISTORY = 80;
-
 const TRASH_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>`;
 
-interface ExtensionHistoryItem {
-  id: string;
-  createdAt: string;
-  sourceType: "tab";
-  outputFormat: "markdown";
-  title: string;
-  preview: string;
-  markdown: string;
-  report: ExtractionReport;
-  meta: ConversionMeta;
-}
+type ExtensionHistoryItem = SharedHistoryItem;
 
 interface PersistedState {
   items: ExtensionHistoryItem[];
@@ -140,20 +133,34 @@ function formatTimestamp(value: string): string {
   });
 }
 
-async function loadState(): Promise<PersistedState> {
-  const raw = await chrome.storage.local.get(STORAGE_KEY);
-  const payload = raw[STORAGE_KEY] as PersistedState | undefined;
-  if (!payload || !Array.isArray(payload.items)) {
-    return { items: [], activeId: null };
+function sourceTypeLabel(sourceType: ExtensionHistoryItem["sourceType"]): string {
+  if (sourceType === "url") {
+    return "URL";
   }
+  if (sourceType === "html") {
+    return "HTML";
+  }
+  if (sourceType === "tab") {
+    return "Tab";
+  }
+  return "Paste";
+}
+
+function outputFormatLabel(outputFormat: ExtensionHistoryItem["outputFormat"]): string {
+  return outputFormat === "json" ? ".json" : ".md";
+}
+
+async function loadState(): Promise<PersistedState> {
+  const raw = await chrome.storage.local.get(SHARED_HISTORY_STORAGE_KEY);
+  const normalized = normalizeSharedHistoryState(raw[SHARED_HISTORY_STORAGE_KEY]);
   return {
-    items: payload.items,
-    activeId: typeof payload.activeId === "string" || payload.activeId === null ? payload.activeId : null,
+    items: normalized.items,
+    activeId: normalized.activeId,
   };
 }
 
 async function saveState(state: PersistedState): Promise<void> {
-  await chrome.storage.local.set({ [STORAGE_KEY]: state });
+  await chrome.storage.local.set({ [SHARED_HISTORY_STORAGE_KEY]: state });
 }
 
 const el = {
@@ -232,12 +239,16 @@ function historyItemMatchesQuery(item: ExtensionHistoryItem, queryLower: string)
   const dateLabel = formatTimestamp(item.createdAt).toLowerCase();
   const iso = item.createdAt.toLowerCase();
   const title = item.title.toLowerCase();
-  const body = item.markdown.toLowerCase();
+  const body = (item.markdown ?? item.json?.markdown ?? "").toLowerCase();
+  const sourceLabel = sourceTypeLabel(item.sourceType).toLowerCase();
+  const formatLabel = outputFormatLabel(item.outputFormat).toLowerCase();
   return (
     dateLabel.includes(queryLower) ||
     iso.includes(queryLower) ||
     title.includes(queryLower) ||
-    body.includes(queryLower)
+    body.includes(queryLower) ||
+    sourceLabel.includes(queryLower) ||
+    formatLabel.includes(queryLower)
   );
 }
 
@@ -277,18 +288,23 @@ function renderHistory() {
     selectBtn.type = "button";
     selectBtn.className = "historyTileSelect";
     selectBtn.innerHTML = `
-      <div class="historyTileMeta"></div>
+      <div class="historyTileMeta">
+        <span class="historyTileMetaDate"></span>
+        <span class="historyTileMetaFlow"></span>
+      </div>
       <h3 class="historyTileTitle"></h3>
       <p class="historyTilePreview"></p>
     `;
-    selectBtn.querySelector(".historyTileMeta")!.textContent = formatTimestamp(item.createdAt);
+    selectBtn.querySelector(".historyTileMetaDate")!.textContent = formatTimestamp(item.createdAt);
+    selectBtn.querySelector(".historyTileMetaFlow")!.textContent =
+      `${sourceTypeLabel(item.sourceType)} -> ${outputFormatLabel(item.outputFormat)}`;
     selectBtn.querySelector(".historyTileTitle")!.textContent = item.title;
     (selectBtn.querySelector(".historyTilePreview") as HTMLElement).textContent =
       item.preview || "(No preview text available)";
     selectBtn.addEventListener("click", () => {
       selectBtn.blur();
       state.activeId = item.id;
-      setPreviewMarkdown(item.markdown);
+      setPreviewMarkdown(item.markdown ?? item.json?.markdown ?? "");
       void saveState(state);
       renderHistory();
       showTab("convert");
@@ -406,7 +422,7 @@ async function handleConvert() {
       meta,
     };
 
-    state.items = [historyItem, ...state.items].slice(0, MAX_HISTORY);
+    state.items = [historyItem, ...state.items].slice(0, SHARED_HISTORY_MAX_ITEMS);
     state.activeId = historyItem.id;
     setPreviewMarkdown(fullMarkdown);
     await saveState(state);
@@ -421,7 +437,7 @@ async function handleConvert() {
 
 function triggerCopyButtonFlash() {
   el.copyBtn.classList.remove("ghostButton--copyFlash");
-  el.copyBtn.offsetWidth;
+  void el.copyBtn.offsetWidth;
   el.copyBtn.classList.add("ghostButton--copyFlash");
 }
 

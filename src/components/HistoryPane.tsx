@@ -2,16 +2,16 @@
 
 import type {
   ConversionJsonOutput,
+  ConversionSourceType,
   ConversionMeta,
   ExtractionReport,
   OutputFormat,
-  SourceType,
 } from "@/lib/types/conversion";
 
 export interface HistoryItem {
   id: string;
   createdAt: string;
-  sourceType: SourceType;
+  sourceType: ConversionSourceType;
   outputFormat: OutputFormat;
   title: string;
   preview: string;
@@ -21,12 +21,15 @@ export interface HistoryItem {
   meta: ConversionMeta;
 }
 
-function sourceTypeLabel(sourceType: SourceType): string {
+function sourceTypeLabel(sourceType: ConversionSourceType): string {
   if (sourceType === "url") {
     return "URL";
   }
   if (sourceType === "html") {
     return "HTML";
+  }
+  if (sourceType === "tab") {
+    return "Tab";
   }
   return "Paste";
 }
@@ -82,14 +85,12 @@ interface HistoryPaneProps {
 export function HistoryPane({ items, onSelect, onDeleteItem, onClearHistory }: HistoryPaneProps) {
   function confirmDeleteOne() {
     return window.confirm(
-      "Remove this conversion from your session history? This cannot be undone.",
+      "Remove this conversion from saved history? This cannot be undone.",
     );
   }
 
   function confirmClearAll() {
-    return window.confirm(
-      "Clear all conversions from this session? This cannot be undone.",
-    );
+    return window.confirm("Clear all saved conversions? This cannot be undone.");
   }
 
   return (
@@ -97,7 +98,7 @@ export function HistoryPane({ items, onSelect, onDeleteItem, onClearHistory }: H
       <div className="outputHeader">
         <div>
           <h2>History</h2>
-          <p className="muted">Session conversions</p>
+          <p className="muted">Saved conversions</p>
         </div>
       </div>
 
