@@ -16,7 +16,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Page2MD",
+  title: "page2md",
   description: "Convert rich website docs into markdown and JSON",
 };
 
