@@ -12,11 +12,12 @@ import {
   type SharedHistoryItem,
 } from "@/lib/history/shared-history";
 
-import { highlightMarkdownForPreview } from "./markdown-highlight";
+import { highlightJsonForPreview, highlightMarkdownForPreview } from "./markdown-highlight";
 
 const TRASH_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>`;
 
 type ExtensionHistoryItem = SharedHistoryItem;
+type PreviewFormat = "markdown" | "json";
 
 interface PersistedState {
   items: ExtensionHistoryItem[];
@@ -182,6 +183,47 @@ const el = {
 let state: PersistedState = { items: [], activeId: null };
 /** Plain markdown for copy/download and highlighting (mirrors web app Prism preview). */
 let previewPlain = "";
+let previewFormat: PreviewFormat = "markdown";
+
+function compactJsonHistoryPreview(item: ExtensionHistoryItem): string {
+  if (!item.json) {
+    return item.preview || "(No preview text available)";
+  }
+  const contentSnippet = item.json.markdown
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !line.startsWith("```"))
+    .slice(0, 2)
+    .join(" ")
+    .slice(0, 170);
+  const parts = [
+    item.json.meta?.title ? `title: ${item.json.meta.title}` : "",
+    contentSnippet ? `content: ${contentSnippet}` : "",
+  ].filter(Boolean);
+  if (parts.length > 0) {
+    return parts.join(" · ");
+  }
+  const compact = JSON.stringify(item.json);
+  return compact.length > 220 ? `${compact.slice(0, 217)}...` : compact;
+}
+
+function historyPreviewText(item: ExtensionHistoryItem): string {
+  if (item.outputFormat === "json") {
+    return compactJsonHistoryPreview(item);
+  }
+  return item.preview || "(No preview text available)";
+}
+
+function historyOutput(item: ExtensionHistoryItem): { format: PreviewFormat; text: string } {
+  if (item.outputFormat === "json" && item.json) {
+    return { format: "json", text: JSON.stringify(item.json, null, 2) };
+  }
+  return {
+    format: "markdown",
+    text: item.markdown ?? item.json?.markdown ?? "",
+  };
+}
 
 function renderPreviewOutput() {
   if (!previewPlain.trim()) {
@@ -190,12 +232,18 @@ function renderPreviewOutput() {
     return;
   }
   el.preview.classList.remove("previewArea--empty");
-  const inner = highlightMarkdownForPreview(previewPlain);
-  el.preview.innerHTML = `<pre class="previewPre"><code class="language-markdown">${inner}</code></pre>`;
+  if (previewFormat === "markdown") {
+    const inner = highlightMarkdownForPreview(previewPlain);
+    el.preview.innerHTML = `<pre class="previewPre"><code class="language-markdown">${inner}</code></pre>`;
+    return;
+  }
+  const inner = highlightJsonForPreview(previewPlain);
+  el.preview.innerHTML = `<pre class="previewPre"><code class="language-json">${inner}</code></pre>`;
 }
 
-function setPreviewMarkdown(text: string) {
+function setPreviewOutput(text: string, format: PreviewFormat) {
   previewPlain = text;
+  previewFormat = format;
   renderPreviewOutput();
   updatePreviewActions();
 }
@@ -300,11 +348,12 @@ function renderHistory() {
       `${sourceTypeLabel(item.sourceType)} -> ${outputFormatLabel(item.outputFormat)}`;
     selectBtn.querySelector(".historyTileTitle")!.textContent = item.title;
     (selectBtn.querySelector(".historyTilePreview") as HTMLElement).textContent =
-      item.preview || "(No preview text available)";
+      historyPreviewText(item);
     selectBtn.addEventListener("click", () => {
       selectBtn.blur();
       state.activeId = item.id;
-      setPreviewMarkdown(item.markdown ?? item.json?.markdown ?? "");
+      const output = historyOutput(item);
+      setPreviewOutput(output.text, output.format);
       void saveState(state);
       renderHistory();
       showTab("convert");
@@ -339,7 +388,7 @@ async function handleClearHistory() {
   state = { items: [], activeId: null };
   await saveState(state);
   el.historySearch.value = "";
-  setPreviewMarkdown("");
+  setPreviewOutput("", "markdown");
   renderHistory();
 }
 
@@ -357,7 +406,7 @@ async function handleDeleteHistoryItem(id: string) {
   state.items = state.items.filter((item) => item.id !== id);
   if (state.activeId === id) {
     state.activeId = null;
-    setPreviewMarkdown("");
+    setPreviewOutput("", "markdown");
   }
   await saveState(state);
   renderHistory();
@@ -424,7 +473,7 @@ async function handleConvert() {
 
     state.items = [historyItem, ...state.items].slice(0, SHARED_HISTORY_MAX_ITEMS);
     state.activeId = historyItem.id;
-    setPreviewMarkdown(fullMarkdown);
+    setPreviewOutput(fullMarkdown, "markdown");
     await saveState(state);
     renderHistory();
   } catch (err) {
@@ -457,7 +506,10 @@ function handleDownload() {
   if (!previewPlain.trim()) {
     return;
   }
-  const headingCandidate = firstHeadingFromMarkdown(previewPlain);
+  const headingCandidate =
+    previewFormat === "markdown"
+      ? firstHeadingFromMarkdown(previewPlain)
+      : "";
   const stemFromContent = dedupeRepeatedStem(sanitizeFileStem(headingCandidate));
   const stemFromTitle = dedupeRepeatedStem(
     sanitizeFileStem(
@@ -465,11 +517,16 @@ function handleDownload() {
     ),
   );
   const fileStem = stemFromContent || stemFromTitle || "page2md-output";
-  const blob = new Blob([previewPlain], { type: "text/markdown;charset=utf-8" });
+  const extension = previewFormat === "json" ? "json" : "md";
+  const mimeType =
+    previewFormat === "json"
+      ? "application/json;charset=utf-8"
+      : "text/markdown;charset=utf-8";
+  const blob = new Blob([previewPlain], { type: mimeType });
   const href = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = href;
-  a.download = `${fileStem}.md`;
+  a.download = `${fileStem}.${extension}`;
   a.click();
   URL.revokeObjectURL(href);
 }
@@ -489,6 +546,6 @@ el.downloadBtn.addEventListener("click", () => handleDownload());
 
 void (async () => {
   state = await loadState();
-  setPreviewMarkdown("");
+  setPreviewOutput("", "markdown");
   renderHistory();
 })();

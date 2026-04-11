@@ -2,6 +2,7 @@ import Prism from "prismjs";
 import "prismjs/components/prism-markup.js";
 import "prismjs/components/prism-yaml.js";
 import "prismjs/components/prism-markdown.js";
+import "prismjs/components/prism-json.js";
 
 function escapeHtml(text: string): string {
   return text
@@ -17,6 +18,17 @@ export function highlightMarkdownForPreview(source: string): string {
   }
   try {
     return Prism.highlight(source, Prism.languages.markdown, "markdown");
+  } catch {
+    return escapeHtml(source);
+  }
+}
+
+export function highlightJsonForPreview(source: string): string {
+  if (!source.trim()) {
+    return "";
+  }
+  try {
+    return Prism.highlight(source, Prism.languages.json, "json");
   } catch {
     return escapeHtml(source);
   }

@@ -18,25 +18,34 @@
 }
 
 /*
-  Extension popups are drawn on a native window that often has a light default
-  background. Avoid clip-path / outer border-radius on html: they leave
-  subpixel gaps where that background shows through as a white “frame”.
+  Extension popups sit on Chrome’s native surface; DPR rounding and html/body
+  size mismatch often leak a 1px light fringe. Lock html to the same box as
+  body, hint color-scheme in HTML, and use same-color inset “masks” on edges.
 */
 html {
   margin: 0;
   padding: 0;
   border: none;
   outline: none;
+  width: 400px;
+  height: 560px;
+  min-width: 400px;
+  min-height: 560px;
+  max-width: 400px;
+  max-height: 560px;
   background-color: var(--bg);
   background: var(--bg);
   overflow: hidden;
+  /* Cover subpixel gaps between popup chrome and document */
+  box-shadow: inset 0 0 0 3px var(--bg);
+  isolation: isolate;
 }
 
 body {
-  width: 400px;
-  height: 560px;
-  min-height: 560px;
-  max-height: 560px;
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
   margin: 0;
   padding: 0;
   border: none;
@@ -50,6 +59,8 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /* Extra compositing layer can reduce edge halos on some Chrome builds */
+  transform: translateZ(0);
 }
 
 .popupRoot {
@@ -235,7 +246,8 @@ body {
   -moz-tab-size: 2;
 }
 
-.previewArea code.language-markdown {
+.previewArea code.language-markdown,
+.previewArea code.language-json {
   display: block;
   width: max-content;
   min-width: 100%;
@@ -243,6 +255,11 @@ body {
   font-size: 11px;
   line-height: 1.45;
   text-shadow: 0 1px rgba(0, 0, 0, 0.3);
+}
+
+/* JSON: distinguish numbers from keys (both were default “red” token bucket) */
+.previewArea code.language-json .token.number {
+  color: hsl(29, 54%, 61%);
 }
 
 .previewArea .token.comment,
