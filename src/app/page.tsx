@@ -10,6 +10,7 @@ import {
   SHARED_HISTORY_MAX_ITEMS,
   WEB_FALLBACK_HISTORY_STORAGE_KEY,
   normalizeSharedHistoryState,
+  type SharedHistoryState,
   type SharedHistoryItem,
 } from "@/lib/history/shared-history";
 import type {
@@ -95,9 +96,9 @@ interface BridgeMessage {
 }
 
 interface HistoryBridgeApi {
-  requestState: () => Promise<SharedHistoryItem[] | null>;
-  pushState: (items: SharedHistoryItem[]) => void;
-  subscribeToChanges: (onChanged: (items: SharedHistoryItem[]) => void) => () => void;
+  requestState: () => Promise<SharedHistoryState | null>;
+  pushState: (state: SharedHistoryState) => void;
+  subscribeToChanges: (onChanged: (state: SharedHistoryState) => void) => () => void;
 }
 
 const BRIDGE_SOURCE_WEB = "page2md-web";
@@ -121,11 +122,11 @@ function createHistoryBridge(): HistoryBridgeApi {
     );
   }
 
-  function normalizeItems(payload: unknown): SharedHistoryItem[] {
-    return normalizeSharedHistoryState(payload).items;
+  function normalizeState(payload: unknown): SharedHistoryState {
+    return normalizeSharedHistoryState(payload);
   }
 
-  async function requestState(): Promise<SharedHistoryItem[] | null> {
+  async function requestState(): Promise<SharedHistoryState | null> {
     const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     return new Promise((resolve) => {
       const timeout = window.setTimeout(() => {
@@ -146,7 +147,7 @@ function createHistoryBridge(): HistoryBridgeApi {
 
         window.clearTimeout(timeout);
         window.removeEventListener("message", onMessage);
-        resolve(normalizeItems(event.data.payload));
+        resolve(normalizeState(event.data.payload));
       }
 
       window.addEventListener("message", onMessage);
@@ -162,22 +163,19 @@ function createHistoryBridge(): HistoryBridgeApi {
     });
   }
 
-  function pushState(items: SharedHistoryItem[]) {
+  function pushState(state: SharedHistoryState) {
     window.postMessage(
       {
         source: BRIDGE_SOURCE_WEB,
         channel: BRIDGE_CHANNEL,
         type: MSG_SET_HISTORY,
-        payload: {
-          items,
-          activeId: items[0]?.id ?? null,
-        },
+        payload: state,
       } satisfies BridgeMessage,
       window.location.origin,
     );
   }
 
-  function subscribeToChanges(onChanged: (items: SharedHistoryItem[]) => void): () => void {
+  function subscribeToChanges(onChanged: (state: SharedHistoryState) => void): () => void {
     function onMessage(event: MessageEvent) {
       if (event.source !== window || event.origin !== window.location.origin) {
         return;
@@ -188,7 +186,7 @@ function createHistoryBridge(): HistoryBridgeApi {
       if (event.data.type !== MSG_HISTORY_CHANGED) {
         return;
       }
-      onChanged(normalizeItems(event.data.payload));
+      onChanged(normalizeState(event.data.payload));
     }
 
     window.addEventListener("message", onMessage);
@@ -264,6 +262,7 @@ export default function Home() {
   const [historyItems, setHistoryItems] = useState<SharedHistoryItem[]>([]);
   const historyBridgeRef = useRef<HistoryBridgeApi | null>(null);
   const syncingFromExtensionRef = useRef(false);
+  const historyRevisionRef = useRef(0);
 
   const displayedOutput = useMemo(
     () => resolveDisplayedOutput(outputFormat, markdown, json),
@@ -281,6 +280,7 @@ export default function Home() {
     if (initialRaw) {
       try {
         const normalized = normalizeSharedHistoryState(JSON.parse(initialRaw));
+        historyRevisionRef.current = normalized.revision;
         setHistoryItems(normalized.items);
       } catch {
         // Ignore invalid local/session payload and start with empty history.
@@ -288,20 +288,28 @@ export default function Home() {
     }
 
     void (async () => {
-      const extensionItems = await historyBridgeRef.current?.requestState();
-      if (!extensionItems) {
+      const extensionState = await historyBridgeRef.current?.requestState();
+      if (!extensionState) {
         return;
       }
+      if (extensionState.revision < historyRevisionRef.current) {
+        return;
+      }
+      historyRevisionRef.current = extensionState.revision;
       syncingFromExtensionRef.current = true;
-      setHistoryItems(extensionItems);
+      setHistoryItems(extensionState.items);
     })();
 
-    const unsubscribe = historyBridgeRef.current.subscribeToChanges((items) => {
+    const unsubscribe = historyBridgeRef.current.subscribeToChanges((nextState) => {
+      if (nextState.revision < historyRevisionRef.current) {
+        return;
+      }
+      historyRevisionRef.current = nextState.revision;
       syncingFromExtensionRef.current = true;
       setHistoryItems((previous) => {
-        const nextSerialized = JSON.stringify(items);
+        const nextSerialized = JSON.stringify(nextState.items);
         const previousSerialized = JSON.stringify(previous);
-        return nextSerialized === previousSerialized ? previous : items;
+        return nextSerialized === previousSerialized ? previous : nextState.items;
       });
     });
 
@@ -312,13 +320,21 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const nextState: SharedHistoryState = {
+      items: historyItems,
+      activeId: historyItems[0]?.id ?? null,
+      revision: historyRevisionRef.current,
+    };
+
+    if (!syncingFromExtensionRef.current) {
+      historyRevisionRef.current += 1;
+      nextState.revision = historyRevisionRef.current;
+    }
+
     try {
       localStorage.setItem(
         WEB_FALLBACK_HISTORY_STORAGE_KEY,
-        JSON.stringify({
-          items: historyItems,
-          activeId: historyItems[0]?.id ?? null,
-        }),
+        JSON.stringify(nextState),
       );
       sessionStorage.removeItem(LEGACY_WEB_SESSION_HISTORY_STORAGE_KEY);
     } catch {
@@ -330,7 +346,7 @@ export default function Home() {
       return;
     }
 
-    historyBridgeRef.current?.pushState(historyItems);
+    historyBridgeRef.current?.pushState(nextState);
   }, [historyItems]);
 
   function setSource(value: string) {

@@ -18,9 +18,7 @@
 }
 
 /*
-  Extension popups sit on Chrome’s native surface; DPR rounding and html/body
-  size mismatch often leak a 1px light fringe. Lock html to the same box as
-  body, hint color-scheme in HTML, and use same-color inset “masks” on edges.
+  Keep the popup root on a flat dark surface to avoid edge fringes.
 */
 html {
   margin: 0;
@@ -36,8 +34,7 @@ html {
   background-color: var(--bg);
   background: var(--bg);
   overflow: hidden;
-  /* Cover subpixel gaps between popup chrome and document */
-  box-shadow: inset 0 0 0 3px var(--bg);
+  box-shadow: none;
   isolation: isolate;
 }
 
@@ -59,8 +56,7 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
-  /* Extra compositing layer can reduce edge halos on some Chrome builds */
-  transform: translateZ(0);
+  transform: none;
 }
 
 .popupRoot {
@@ -202,6 +198,40 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.report {
+  border-top: 1px solid var(--panel-border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+}
+
+.report h3 {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.report ul {
+  margin-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.warningBox {
+  border: 1px solid rgba(255, 123, 114, 0.35);
+  background: rgba(255, 123, 114, 0.1);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
 }
 
 /* Prism token colors aligned with react-syntax-highlighter / One Dark (web app) */

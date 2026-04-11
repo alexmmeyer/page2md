@@ -4,11 +4,12 @@ import {
   extractDomMainContent,
   type DomExtractedContent,
 } from "@/lib/extract/dom-main-content";
-import type { ConversionMeta } from "@/lib/types/conversion";
+import type { ConversionMeta, ConversionSourceType, ExtractionReport } from "@/lib/types/conversion";
 import {
   SHARED_HISTORY_MAX_ITEMS,
   SHARED_HISTORY_STORAGE_KEY,
   normalizeSharedHistoryState,
+  type SharedHistoryState,
   type SharedHistoryItem,
 } from "@/lib/history/shared-history";
 
@@ -18,11 +19,7 @@ const TRASH_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" heigh
 
 type ExtensionHistoryItem = SharedHistoryItem;
 type PreviewFormat = "markdown" | "json";
-
-interface PersistedState {
-  items: ExtensionHistoryItem[];
-  activeId: string | null;
-}
+type PersistedState = SharedHistoryState;
 
 function stripFrontmatter(markdownText: string): string {
   if (!markdownText.startsWith("---\n")) {
@@ -157,11 +154,17 @@ async function loadState(): Promise<PersistedState> {
   return {
     items: normalized.items,
     activeId: normalized.activeId,
+    revision: normalized.revision,
   };
 }
 
 async function saveState(state: PersistedState): Promise<void> {
-  await chrome.storage.local.set({ [SHARED_HISTORY_STORAGE_KEY]: state });
+  const nextState: PersistedState = {
+    ...state,
+    revision: state.revision + 1,
+  };
+  await chrome.storage.local.set({ [SHARED_HISTORY_STORAGE_KEY]: nextState });
+  state.revision = nextState.revision;
 }
 
 const el = {
@@ -169,6 +172,11 @@ const el = {
   convertBtn: document.getElementById("convertBtn") as HTMLButtonElement,
   copyBtn: document.getElementById("copyBtn") as HTMLButtonElement,
   downloadBtn: document.getElementById("downloadBtn") as HTMLButtonElement,
+  report: document.getElementById("report") as HTMLElement,
+  reportHeading: document.getElementById("reportHeading") as HTMLElement,
+  reportCounts: document.getElementById("reportCounts") as HTMLUListElement,
+  reportNotesHeading: document.getElementById("reportNotesHeading") as HTMLElement,
+  reportWarnings: document.getElementById("reportWarnings") as HTMLElement,
   preview: document.getElementById("preview") as HTMLDivElement,
   tabConvert: document.getElementById("tab-convert") as HTMLButtonElement,
   tabHistory: document.getElementById("tab-history") as HTMLButtonElement,
@@ -180,10 +188,12 @@ const el = {
   historyList: document.getElementById("historyList") as HTMLElement,
 };
 
-let state: PersistedState = { items: [], activeId: null };
+let state: PersistedState = { items: [], activeId: null, revision: 0 };
 /** Plain markdown for copy/download and highlighting (mirrors web app Prism preview). */
 let previewPlain = "";
 let previewFormat: PreviewFormat = "markdown";
+let currentReport: ExtractionReport | null = null;
+let currentSourceType: ConversionSourceType | null = null;
 
 function compactJsonHistoryPreview(item: ExtensionHistoryItem): string {
   if (!item.json) {
@@ -246,6 +256,63 @@ function setPreviewOutput(text: string, format: PreviewFormat) {
   previewFormat = format;
   renderPreviewOutput();
   updatePreviewActions();
+}
+
+function renderExtractionSummary() {
+  const showCounts = Boolean(
+    currentReport &&
+      (currentSourceType === "url" || currentSourceType === "tab") &&
+      ((currentReport.collapsiblesAttempted ?? 0) > 0 ||
+        (currentReport.collapsiblesOpened ?? 0) > 0 ||
+        (currentReport.sequentialGroupsDetected ?? 0) > 0),
+  );
+  const showWarnings = Boolean(currentReport?.warnings.length);
+  const hasReport = showCounts || showWarnings;
+
+  el.report.hidden = !hasReport;
+  if (!hasReport || !currentReport) {
+    el.reportCounts.replaceChildren();
+    el.reportWarnings.replaceChildren();
+    return;
+  }
+
+  el.reportHeading.hidden = !showCounts;
+  el.reportCounts.hidden = !showCounts;
+  el.reportCounts.replaceChildren();
+  if (showCounts) {
+    if ((currentReport.collapsiblesAttempted ?? 0) > 0) {
+      const item = document.createElement("li");
+      item.textContent = `Collapsibles attempted: ${currentReport.collapsiblesAttempted}`;
+      el.reportCounts.appendChild(item);
+    }
+    if ((currentReport.collapsiblesOpened ?? 0) > 0) {
+      const item = document.createElement("li");
+      item.textContent = `Collapsibles opened: ${currentReport.collapsiblesOpened}`;
+      el.reportCounts.appendChild(item);
+    }
+    if ((currentReport.sequentialGroupsDetected ?? 0) > 0) {
+      const item = document.createElement("li");
+      item.textContent = `Sequential accordion groups: ${currentReport.sequentialGroupsDetected}`;
+      el.reportCounts.appendChild(item);
+    }
+  }
+
+  el.reportNotesHeading.hidden = !showWarnings;
+  el.reportWarnings.hidden = !showWarnings;
+  el.reportWarnings.replaceChildren();
+  if (showWarnings) {
+    for (const warning of currentReport.warnings) {
+      const warningLine = document.createElement("p");
+      warningLine.textContent = warning;
+      el.reportWarnings.appendChild(warningLine);
+    }
+  }
+}
+
+function setCurrentReport(report: ExtractionReport | null, sourceType: ConversionSourceType | null) {
+  currentReport = report;
+  currentSourceType = sourceType;
+  renderExtractionSummary();
 }
 
 function setError(message: string) {
@@ -345,7 +412,7 @@ function renderHistory() {
     `;
     selectBtn.querySelector(".historyTileMetaDate")!.textContent = formatTimestamp(item.createdAt);
     selectBtn.querySelector(".historyTileMetaFlow")!.textContent =
-      `${sourceTypeLabel(item.sourceType)} -> ${outputFormatLabel(item.outputFormat)}`;
+      `${sourceTypeLabel(item.sourceType)} → ${outputFormatLabel(item.outputFormat)}`;
     selectBtn.querySelector(".historyTileTitle")!.textContent = item.title;
     (selectBtn.querySelector(".historyTilePreview") as HTMLElement).textContent =
       historyPreviewText(item);
@@ -354,6 +421,7 @@ function renderHistory() {
       state.activeId = item.id;
       const output = historyOutput(item);
       setPreviewOutput(output.text, output.format);
+      setCurrentReport(item.report, item.sourceType);
       void saveState(state);
       renderHistory();
       showTab("convert");
@@ -385,10 +453,11 @@ async function handleClearHistory() {
   if (!confirmed) {
     return;
   }
-  state = { items: [], activeId: null };
+  state = { items: [], activeId: null, revision: state.revision };
   await saveState(state);
   el.historySearch.value = "";
   setPreviewOutput("", "markdown");
+  setCurrentReport(null, null);
   renderHistory();
 }
 
@@ -407,6 +476,7 @@ async function handleDeleteHistoryItem(id: string) {
   if (state.activeId === id) {
     state.activeId = null;
     setPreviewOutput("", "markdown");
+    setCurrentReport(null, null);
   }
   await saveState(state);
   renderHistory();
@@ -474,6 +544,7 @@ async function handleConvert() {
     state.items = [historyItem, ...state.items].slice(0, SHARED_HISTORY_MAX_ITEMS);
     state.activeId = historyItem.id;
     setPreviewOutput(fullMarkdown, "markdown");
+    setCurrentReport(extracted.report, "tab");
     await saveState(state);
     renderHistory();
   } catch (err) {
@@ -547,5 +618,6 @@ el.downloadBtn.addEventListener("click", () => handleDownload());
 void (async () => {
   state = await loadState();
   setPreviewOutput("", "markdown");
+  setCurrentReport(null, null);
   renderHistory();
 })();

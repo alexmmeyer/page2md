@@ -27,19 +27,25 @@ export interface SharedHistoryItem {
 export interface SharedHistoryState {
   items: SharedHistoryItem[];
   activeId: string | null;
+  revision: number;
 }
 
 export function normalizeSharedHistoryState(value: unknown): SharedHistoryState {
   if (!value || typeof value !== "object") {
-    return { items: [], activeId: null };
+    return { items: [], activeId: null, revision: 0 };
   }
 
   const candidate = value as Partial<SharedHistoryState>;
+  const revision =
+    typeof candidate.revision === "number" && Number.isFinite(candidate.revision)
+      ? Math.max(0, Math.floor(candidate.revision))
+      : 0;
   return {
     items: Array.isArray(candidate.items) ? candidate.items : [],
     activeId:
       typeof candidate.activeId === "string" || candidate.activeId === null
         ? candidate.activeId
         : null,
+    revision,
   };
 }

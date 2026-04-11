@@ -391,6 +391,7 @@ a:visited {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  font-family: var(--font-ibm-plex-sans), system-ui, sans-serif;
 }
 
 .report ul {
@@ -408,6 +409,7 @@ a:visited {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  font-family: var(--font-ibm-plex-sans), system-ui, sans-serif;
 }
 
 .muted {
