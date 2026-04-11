@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 
 import { ConverterForm } from "@/components/ConverterForm";
 import { HistoryPane } from "@/components/HistoryPane";
@@ -552,6 +553,11 @@ export default function Home() {
       </div>
 
       {error ? <p className="errorText">{error}</p> : null}
+      <footer className="appFooter">
+        <Link href="/privacy" className="appFooterLink">
+          Privacy Policy
+        </Link>
+      </footer>
     </main>
   );
 }

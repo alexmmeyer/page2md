@@ -14,6 +14,8 @@ function htmlForSize(px) {
   // Larger fraction of the canvas so {#} reads at 16px toolbar size.
   const fontSize = Math.max(9, Math.round(px * 0.54));
   const letterSpacing = Math.round(px * -0.028);
+  const glowNear = Math.max(0.6, px * 0.04).toFixed(2);
+  const glowFar = Math.max(1.2, px * 0.075).toFixed(2);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -38,6 +40,9 @@ function htmlForSize(px) {
       line-height: 1;
       letter-spacing: ${letterSpacing}px;
       -webkit-font-smoothing: antialiased;
+      text-shadow:
+        0 0 ${glowNear}px rgba(255, 255, 255, 0.42),
+        0 0 ${glowFar}px rgba(255, 255, 255, 0.22);
     }
   </style>
 </head>

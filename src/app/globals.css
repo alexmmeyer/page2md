@@ -579,6 +579,69 @@ a:visited {
   overflow: hidden;
 }
 
+.appFooter {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.appFooterLink,
+.appFooterLink:visited {
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.appFooterLink:hover {
+  color: var(--accent);
+}
+
+.policyShell {
+  width: min(920px, 100%);
+  height: 100dvh;
+  margin: 0 auto;
+  padding: 28px 20px;
+  overflow: auto;
+}
+
+.policyCard {
+  border: 1px solid var(--panel-border);
+  background: linear-gradient(180deg, #131a24 0%, var(--panel) 100%);
+  border-radius: 14px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  line-height: 1.55;
+}
+
+.policyCard h1 {
+  font-size: 1.65rem;
+}
+
+.policyCard h2 {
+  font-size: 1.03rem;
+  margin-top: 8px;
+}
+
+.policyCard ul {
+  margin-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.policyMeta {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.policyBackLink {
+  margin-top: 8px;
+}
+
 @media (max-width: 1000px) {
   .grid {
     grid-template-columns: 1fr;
