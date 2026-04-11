@@ -38,6 +38,40 @@ function outputFormatLabel(outputFormat: OutputFormat): string {
   return outputFormat === "json" ? ".json" : ".md";
 }
 
+function compactJsonHistoryPreview(json: ConversionJsonOutput): string {
+  const contentSnippet = json.markdown
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !line.startsWith("```"))
+    .slice(0, 2)
+    .join(" ")
+    .slice(0, 170);
+
+  const parts = [
+    json.meta?.title ? `title: ${json.meta.title}` : "",
+    contentSnippet ? `content: ${contentSnippet}` : "",
+  ].filter(Boolean);
+
+  if (parts.length > 0) {
+    return parts.join(" · ");
+  }
+
+  const compact = JSON.stringify(json);
+  return compact.length > 220 ? `${compact.slice(0, 217)}...` : compact;
+}
+
+function historyPreviewText(item: HistoryItem): string {
+  if (item.outputFormat === "json") {
+    if (!item.json) {
+      return item.preview || "(No preview text available)";
+    }
+    return compactJsonHistoryPreview(item.json) || "(No preview text available)";
+  }
+
+  return item.preview || "(No preview text available)";
+}
+
 function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -123,7 +157,7 @@ export function HistoryPane({ items, onSelect, onDeleteItem, onClearHistory }: H
                   </span>
                 </div>
                 <h3 className="historyTileTitle">{item.title}</h3>
-                <p className="historyTilePreview">{item.preview || "(No preview text available)"}</p>
+                <p className="historyTilePreview">{historyPreviewText(item)}</p>
               </button>
               <button
                 type="button"
