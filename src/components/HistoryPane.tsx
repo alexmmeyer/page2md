@@ -23,7 +23,6 @@ export interface HistoryItem {
 
 interface HistoryPaneProps {
   items: HistoryItem[];
-  activeId: string | null;
   onSelect: (item: HistoryItem) => void;
 }
 
@@ -56,7 +55,7 @@ function formatTimestamp(value: string): string {
   });
 }
 
-export function HistoryPane({ items, activeId, onSelect }: HistoryPaneProps) {
+export function HistoryPane({ items, onSelect }: HistoryPaneProps) {
   return (
     <section className="panel historyPanel">
       <div className="outputHeader">
@@ -74,7 +73,7 @@ export function HistoryPane({ items, activeId, onSelect }: HistoryPaneProps) {
             <button
               key={item.id}
               type="button"
-              className={item.id === activeId ? "historyTile active" : "historyTile"}
+              className="historyTile"
               onClick={() => onSelect(item)}
             >
               <div className="historyTileMeta">

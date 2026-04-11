@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Page2MD",
+  "name": "page2md",
   "version": "1.0.0",
   "description": "Convert the current page to Markdown, including logged-in content.",
   "icons": {
@@ -11,7 +11,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Page2MD",
+    "default_title": "page2md",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

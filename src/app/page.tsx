@@ -159,7 +159,6 @@ export default function Home() {
   const [outputSourceType, setOutputSourceType] = useState<ConversionSourceType | null>(null);
   const [title, setTitle] = useState("");
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
-  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
 
   const displayedOutput = useMemo(
     () => resolveDisplayedOutput(outputFormat, markdown, json),
@@ -176,17 +175,11 @@ export default function Home() {
 
       const parsed = JSON.parse(raw) as {
         items?: HistoryItem[];
-        activeId?: string | null;
       };
 
       const restoredItems = Array.isArray(parsed.items) ? parsed.items : [];
-      const restoredActiveId =
-        typeof parsed.activeId === "string" || parsed.activeId === null
-          ? parsed.activeId
-          : null;
 
       setHistoryItems(restoredItems);
-      setActiveHistoryId(restoredActiveId ?? null);
     } catch {
       // Ignore invalid session payload and start with empty history.
     }
@@ -198,13 +191,12 @@ export default function Home() {
         HISTORY_STORAGE_KEY,
         JSON.stringify({
           items: historyItems,
-          activeId: activeHistoryId,
         }),
       );
     } catch {
       // Ignore sessionStorage write failures.
     }
-  }, [activeHistoryId, historyItems]);
+  }, [historyItems]);
 
   function setSource(value: string) {
     setSourcesByType((previous) => ({
@@ -268,7 +260,6 @@ export default function Home() {
         meta: conversion.meta,
       };
       setHistoryItems((previous) => [historyItem, ...previous]);
-      setActiveHistoryId(historyItem.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unexpected error.";
       setError(message);
@@ -284,7 +275,6 @@ export default function Home() {
     setOutputSourceType(item.meta.sourceType);
     setOutputFormat(item.outputFormat);
     setTitle(item.meta.title);
-    setActiveHistoryId(item.id);
   }
 
   function handleCopy() {
@@ -394,7 +384,6 @@ export default function Home() {
         />
         <HistoryPane
           items={historyItems}
-          activeId={activeHistoryId}
           onSelect={handleSelectHistory}
         />
       </div>
