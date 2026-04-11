@@ -2,6 +2,7 @@ import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 
 const LANGUAGE_CLASS_PATTERN = /\blanguage-([a-z0-9_+-]+)/i;
+const FONT_WEIGHT_BOLD_PATTERN = /font-weight\s*:\s*(bold|bolder|[6-9]00)/i;
 
 function detectLanguage(codeElement: Element | null): string {
   if (!codeElement) {
@@ -30,6 +31,24 @@ export function htmlToMarkdown(html: string): string {
   });
 
   turndown.use(gfm);
+
+  // Rich text pastes often encode emphasis in inline styles instead of <strong>.
+  turndown.addRule("styledSpanBold", {
+    filter(node) {
+      if (node.nodeName !== "SPAN") {
+        return false;
+      }
+      const style = node.getAttribute("style") ?? "";
+      return FONT_WEIGHT_BOLD_PATTERN.test(style);
+    },
+    replacement(content) {
+      const trimmed = content.trim();
+      if (!trimmed) {
+        return "";
+      }
+      return `**${trimmed}**`;
+    },
+  });
 
   // Preserve fenced code blocks with language labels when detectable.
   turndown.addRule("fencedCodeLanguage", {
