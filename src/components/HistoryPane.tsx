@@ -152,8 +152,12 @@ export function HistoryPane({ items, onSelect, onDeleteItem, onClearHistory }: H
               >
                 <div className="historyTileMeta">
                   <span>{formatTimestamp(item.createdAt)}</span>
-                  <span>
-                    {sourceTypeLabel(item.sourceType)} → {outputFormatLabel(item.outputFormat)}
+                  <span className="historyTileMetaFlow">
+                    <span>{sourceTypeLabel(item.sourceType)}</span>
+                    <span className="historyFlowArrow" aria-hidden="true">
+                      →
+                    </span>
+                    <span>{outputFormatLabel(item.outputFormat)}</span>
                   </span>
                 </div>
                 <h3 className="historyTileTitle">{item.title}</h3>

@@ -259,6 +259,9 @@ function setPreviewOutput(text: string, format: PreviewFormat) {
 }
 
 function renderExtractionSummary() {
+  const normalizedWarnings = (currentReport?.warnings ?? [])
+    .map((warning) => warning.trim())
+    .filter((warning) => warning.length > 0);
   const showCounts = Boolean(
     currentReport &&
       (currentSourceType === "url" || currentSourceType === "tab") &&
@@ -266,7 +269,7 @@ function renderExtractionSummary() {
         (currentReport.collapsiblesOpened ?? 0) > 0 ||
         (currentReport.sequentialGroupsDetected ?? 0) > 0),
   );
-  const showWarnings = Boolean(currentReport?.warnings.length);
+  const showWarnings = normalizedWarnings.length > 0;
   const hasReport = showCounts || showWarnings;
 
   el.report.hidden = !hasReport;
@@ -301,7 +304,7 @@ function renderExtractionSummary() {
   el.reportWarnings.hidden = !showWarnings;
   el.reportWarnings.replaceChildren();
   if (showWarnings) {
-    for (const warning of currentReport.warnings) {
+    for (const warning of normalizedWarnings) {
       const warningLine = document.createElement("p");
       warningLine.textContent = warning;
       el.reportWarnings.appendChild(warningLine);
@@ -411,8 +414,11 @@ function renderHistory() {
       <p class="historyTilePreview"></p>
     `;
     selectBtn.querySelector(".historyTileMetaDate")!.textContent = formatTimestamp(item.createdAt);
-    selectBtn.querySelector(".historyTileMetaFlow")!.textContent =
-      `${sourceTypeLabel(item.sourceType)} → ${outputFormatLabel(item.outputFormat)}`;
+    (selectBtn.querySelector(".historyTileMetaFlow") as HTMLElement).innerHTML = `
+      <span>${sourceTypeLabel(item.sourceType)}</span>
+      <span class="historyFlowArrow" aria-hidden="true">→</span>
+      <span>${outputFormatLabel(item.outputFormat)}</span>
+    `;
     selectBtn.querySelector(".historyTileTitle")!.textContent = item.title;
     (selectBtn.querySelector(".historyTilePreview") as HTMLElement).textContent =
       historyPreviewText(item);
