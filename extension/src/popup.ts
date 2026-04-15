@@ -4,7 +4,12 @@ import {
   extractDomMainContent,
   type DomExtractedContent,
 } from "@/lib/extract/dom-main-content";
-import type { ConversionMeta, ConversionSourceType, ExtractionReport } from "@/lib/types/conversion";
+import type {
+  ConversionMeta,
+  ConversionSourceType,
+  ExtractionRegion,
+  ExtractionReport,
+} from "@/lib/types/conversion";
 import {
   SHARED_HISTORY_MAX_ITEMS,
   SHARED_HISTORY_STORAGE_KEY,
@@ -170,6 +175,9 @@ async function saveState(state: PersistedState): Promise<void> {
 const el = {
   error: document.getElementById("error") as HTMLParagraphElement,
   convertBtn: document.getElementById("convertBtn") as HTMLButtonElement,
+  regionPicker: document.getElementById("regionPicker") as HTMLElement,
+  regionPickerLabel: document.getElementById("regionPickerLabel") as HTMLElement,
+  regionOptions: document.getElementById("regionOptions") as HTMLElement,
   copyBtn: document.getElementById("copyBtn") as HTMLButtonElement,
   downloadBtn: document.getElementById("downloadBtn") as HTMLButtonElement,
   report: document.getElementById("report") as HTMLElement,
@@ -194,6 +202,15 @@ let previewPlain = "";
 let previewFormat: PreviewFormat = "markdown";
 let currentReport: ExtractionReport | null = null;
 let currentSourceType: ConversionSourceType | null = null;
+let pendingRegionSelection:
+  | {
+      tabId: number;
+      tabUrl: string;
+      tabTitle: string;
+      regions: ExtractionRegion[];
+      selectedRegionId: string | null;
+    }
+  | null = null;
 
 function compactJsonHistoryPreview(item: ExtensionHistoryItem): string {
   if (!item.json) {
@@ -328,6 +345,39 @@ function setError(message: string) {
   el.error.textContent = message;
 }
 
+function clearRegionSelection() {
+  pendingRegionSelection = null;
+  el.regionPicker.hidden = true;
+  el.regionOptions.replaceChildren();
+  el.convertBtn.textContent = "Convert this page";
+}
+
+function renderRegionSelection() {
+  if (!pendingRegionSelection || pendingRegionSelection.regions.length === 0) {
+    clearRegionSelection();
+    return;
+  }
+  el.regionPicker.hidden = false;
+  el.regionOptions.replaceChildren();
+  el.regionPickerLabel.textContent = "Select a content region";
+  for (const region of pendingRegionSelection.regions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    const isSelected = pendingRegionSelection.selectedRegionId === region.id;
+    button.className = isSelected ? "regionOption active" : "regionOption";
+    button.setAttribute("aria-pressed", String(isSelected));
+    button.innerHTML = `
+      <span class="regionOptionTitle">${region.label}</span>
+      <span class="regionOptionMeta">${Math.round(region.score)} score · ${region.textLength.toLocaleString()} chars</span>
+    `;
+    button.addEventListener("click", () => {
+      void handleConvertSelectedRegion(region.id);
+    });
+    el.regionOptions.appendChild(button);
+  }
+  el.convertBtn.textContent = "Detect regions again";
+}
+
 function showTab(which: "convert" | "history") {
   const isConvert = which === "convert";
   el.tabConvert.classList.toggle("active", isConvert);
@@ -424,6 +474,7 @@ function renderHistory() {
       historyPreviewText(item);
     selectBtn.addEventListener("click", () => {
       selectBtn.blur();
+      clearRegionSelection();
       state.activeId = item.id;
       const output = historyOutput(item);
       setPreviewOutput(output.text, output.format);
@@ -511,20 +562,71 @@ async function handleConvert() {
 
     const extracted = pickBestFrameResult(results);
 
-    if (!extracted?.html?.trim()) {
+    if (!extracted?.regions?.length) {
       setError(
         "No content was extracted. Some doc sites load text in a cross-origin iframe—try opening the doc URL in its own tab, or a non-embedded docs page.",
       );
       return;
     }
+    pendingRegionSelection = {
+      tabId: tab.id,
+      tabUrl: tab.url ?? "",
+      tabTitle: extracted.title,
+      regions: extracted.regions,
+      selectedRegionId: extracted.defaultRegionId ?? extracted.selectedRegionId ?? extracted.regions[0]?.id ?? null,
+    };
+    setCurrentReport(extracted.report, "tab");
+    renderRegionSelection();
+    showTab("convert");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Conversion failed.";
+    setError(message);
+  } finally {
+    el.convertBtn.disabled = false;
+  }
+}
+
+async function handleConvertSelectedRegion(regionId: string) {
+  if (!pendingRegionSelection) {
+    setError("Detect regions first.");
+    return;
+  }
+  setError("");
+  el.convertBtn.disabled = true;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const check = canScriptTab(tab?.url);
+    if (!check.ok) {
+      setError(check.reason);
+      return;
+    }
+    if (tab?.id === undefined) {
+      setError("Could not read the active tab.");
+      return;
+    }
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: extractDomMainContent,
+      args: [true, regionId],
+    });
+    const extracted = pickBestFrameResult(results);
+
+    if (!extracted?.html?.trim()) {
+      setError("No content was extracted for the selected region.");
+      return;
+    }
 
     const markdownBody = htmlToMarkdown(extracted.html);
     const convertedAt = new Date().toISOString();
+    const sourceUrl = tab.url ?? pendingRegionSelection.tabUrl;
     const meta: ConversionMeta = {
       sourceType: "tab",
-      source: tab.url ?? "",
+      source: sourceUrl,
       title: extracted.title,
       convertedAt,
+      selectedRegionId: extracted.selectedRegionId,
+      selectedRegionLabel: extracted.selectedRegionLabel,
     };
     const fullMarkdown = markdownWithYamlFrontmatter(markdownBody, meta);
 
@@ -553,6 +655,7 @@ async function handleConvert() {
     setCurrentReport(extracted.report, "tab");
     await saveState(state);
     renderHistory();
+    clearRegionSelection();
   } catch (err) {
     const message = err instanceof Error ? err.message : "Conversion failed.";
     setError(message);
@@ -623,6 +726,7 @@ el.downloadBtn.addEventListener("click", () => handleDownload());
 
 void (async () => {
   state = await loadState();
+  clearRegionSelection();
   setPreviewOutput("", "markdown");
   setCurrentReport(null, null);
   renderHistory();

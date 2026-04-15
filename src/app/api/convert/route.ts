@@ -5,7 +5,7 @@ import { htmlToMarkdown } from "@/lib/convert/html-to-markdown";
 import { markdownWithYamlFrontmatter } from "@/lib/convert/markdown-frontmatter";
 import { emitJsonOutput } from "@/lib/emit/json-emitter";
 import { extractPageContent } from "@/lib/extract/extract-page";
-import type { ConversionResponse } from "@/lib/types/conversion";
+import type { ConversionMeta, ConversionResponse } from "@/lib/types/conversion";
 
 export const runtime = "nodejs";
 
@@ -14,6 +14,8 @@ const conversionRequestSchema = z.object({
   source: z.string().min(1, "Source is required."),
   outputFormat: z.enum(["markdown", "json"]).default("markdown"),
   mainContentOnly: z.boolean().default(true),
+  selectedRegionId: z.string().optional(),
+  detectOnly: z.boolean().default(false),
 });
 
 export async function POST(request: Request) {
@@ -32,12 +34,7 @@ export async function POST(request: Request) {
 
     const convertedAt = new Date().toISOString();
     let markdownBody = "";
-    let meta: {
-      sourceType: "url" | "html" | "paste";
-      source: string;
-      title: string;
-      convertedAt: string;
-    };
+    let meta: ConversionMeta;
     let report: {
       collapsiblesAttempted: number;
       collapsiblesOpened: number;
@@ -64,15 +61,32 @@ export async function POST(request: Request) {
         sourceType: payload.sourceType,
         source: payload.source,
         mainContentOnly: payload.mainContentOnly,
+        selectedRegionId: payload.selectedRegionId,
       });
-      markdownBody = htmlToMarkdown(extracted.html);
       meta = {
         sourceType: payload.sourceType,
         source: payload.sourceType === "url" ? payload.source : "Pasted HTML source",
         title: extracted.title,
         convertedAt,
+        selectedRegionId: extracted.selectedRegionId,
+        selectedRegionLabel: extracted.selectedRegionLabel,
       };
       report = extracted.report;
+
+      if (payload.detectOnly) {
+        const detectResponse: ConversionResponse = {
+          outputFormat: payload.outputFormat,
+          report,
+          meta,
+          regions: extracted.regions,
+          defaultRegionId: extracted.defaultRegionId,
+          selectedRegionId: extracted.selectedRegionId,
+          selectedRegionLabel: extracted.selectedRegionLabel,
+        };
+        return NextResponse.json(detectResponse);
+      }
+
+      markdownBody = htmlToMarkdown(extracted.html);
     }
 
     const markdown = markdownWithYamlFrontmatter(markdownBody, meta);
@@ -86,6 +100,8 @@ export async function POST(request: Request) {
           : undefined,
       report,
       meta,
+      selectedRegionId: meta.selectedRegionId,
+      selectedRegionLabel: meta.selectedRegionLabel,
     };
 
     return NextResponse.json(response);

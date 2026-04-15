@@ -139,6 +139,63 @@ body {
   cursor: not-allowed;
 }
 
+.fieldLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.regionPicker {
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(22, 27, 34, 0.55);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.regionOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.regionOption {
+  width: 100%;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.regionOption:hover {
+  border-color: var(--accent);
+}
+
+.regionOption.active {
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.regionOptionTitle {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.regionOptionMeta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .ghostButton {
   padding: 6px 10px;
   border: 1px solid var(--panel-border);

@@ -16,6 +16,7 @@ import {
 } from "@/lib/history/shared-history";
 import type {
   ConversionJsonOutput,
+  ExtractionRegion,
   ConversionResponse,
   ConversionSourceType,
   ExtractionReport,
@@ -292,6 +293,9 @@ export default function Home() {
   const [report, setReport] = useState<ExtractionReport | null>(null);
   const [outputSourceType, setOutputSourceType] = useState<ConversionSourceType | null>(null);
   const [title, setTitle] = useState("");
+  const [detectedRegions, setDetectedRegions] = useState<ExtractionRegion[]>([]);
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+  const [detectedUrlSource, setDetectedUrlSource] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<SharedHistoryItem[]>([]);
   const historyBridgeRef = useRef<HistoryBridgeApi | null>(null);
   const syncingFromExtensionRef = useRef(false);
@@ -304,6 +308,19 @@ export default function Home() {
     [outputFormat, markdown, json],
   );
   const source = sourcesByType[sourceType];
+  const showRegionChooser = sourceType === "url" && detectedRegions.length > 0;
+  const convertButtonLabel =
+    sourceType === "url"
+      ? showRegionChooser
+        ? "Convert selected region"
+        : "Detect regions"
+      : "Convert";
+  const loadingButtonLabel =
+    sourceType === "url"
+      ? showRegionChooser
+        ? "Converting selected region..."
+        : "Detecting regions..."
+      : "Converting...";
 
   useEffect(() => {
     setIsChromeBrowser(isGoogleChromeDesktop());
@@ -387,6 +404,22 @@ export default function Home() {
     historyBridgeRef.current?.pushState(nextState);
   }, [historyItems]);
 
+  useEffect(() => {
+    if (sourceType !== "url") {
+      if (detectedRegions.length > 0 || selectedRegionId !== null || detectedUrlSource !== null) {
+        setDetectedRegions([]);
+        setSelectedRegionId(null);
+        setDetectedUrlSource(null);
+      }
+      return;
+    }
+    if (detectedUrlSource !== null && source !== detectedUrlSource) {
+      setDetectedRegions([]);
+      setSelectedRegionId(null);
+      setDetectedUrlSource(null);
+    }
+  }, [sourceType, source, detectedRegions.length, selectedRegionId, detectedUrlSource]);
+
   function setSource(value: string) {
     setSourcesByType((previous) => ({
       ...previous,
@@ -403,6 +436,49 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
+      if (
+        sourceType === "url" &&
+        (detectedRegions.length === 0 || detectedUrlSource !== source)
+      ) {
+        const detectResponse = await fetch("/api/convert", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sourceType,
+            source,
+            outputFormat,
+            mainContentOnly: true,
+            detectOnly: true,
+          }),
+        });
+        const detectPayload = await detectResponse.json();
+        if (!detectResponse.ok) {
+          throw new Error(detectPayload.error ?? "Could not detect page regions.");
+        }
+        const detection = detectPayload as ConversionResponse;
+        const regions = detection.regions ?? [];
+        if (regions.length === 0) {
+          throw new Error("No content regions were detected for this page.");
+        }
+        const defaultRegionId = detection.defaultRegionId ?? regions[0]?.id ?? null;
+        setDetectedRegions(regions);
+        setSelectedRegionId(defaultRegionId);
+        setDetectedUrlSource(source);
+        setOutputSourceType(detection.meta.sourceType);
+        setReport(detection.report);
+        setTitle(
+          detection.meta.title
+            ? `${detection.meta.title} (select a region)`
+            : "Select a region to convert",
+        );
+        return;
+      }
+      if (sourceType === "url" && !selectedRegionId) {
+        throw new Error("Select a content region first.");
+      }
+
       const response = await fetch("/api/convert", {
         method: "POST",
         headers: {
@@ -413,6 +489,7 @@ export default function Home() {
           source,
           outputFormat,
           mainContentOnly: true,
+          selectedRegionId: sourceType === "url" ? selectedRegionId : undefined,
         }),
       });
 
@@ -428,7 +505,11 @@ export default function Home() {
       setJson(resolvedJson);
       setReport(payload.report);
       setOutputSourceType(conversion.meta.sourceType);
-      setTitle(payload.meta?.title ?? "");
+      setTitle(
+        payload.selectedRegionLabel
+          ? `${payload.meta?.title ?? ""} — ${payload.selectedRegionLabel}`
+          : (payload.meta?.title ?? ""),
+      );
 
       const baseMarkdown = conversion.markdown ?? conversion.json?.markdown ?? "";
       const heading = firstHeadingFromMarkdown(baseMarkdown);
@@ -572,6 +653,12 @@ export default function Home() {
           outputFormat={outputFormat}
           setOutputFormat={setOutputFormat}
           onConvert={handleConvert}
+          regionOptions={detectedRegions}
+          selectedRegionId={selectedRegionId}
+          onSelectRegion={setSelectedRegionId}
+          showRegionChooser={showRegionChooser}
+          convertButtonLabel={convertButtonLabel}
+          loadingButtonLabel={loadingButtonLabel}
           loading={loading}
         />
         <OutputPane

@@ -309,6 +309,57 @@ a:visited {
   cursor: not-allowed;
 }
 
+.regionPicker {
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: #0f1620;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.regionOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.regionOption {
+  width: 100%;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.regionOption:hover {
+  border-color: var(--accent);
+}
+
+.regionOption.active {
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.regionOptionTitle {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.regionOptionMeta {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 @keyframes buttonSpinnerSpin {
   to {
     transform: rotate(360deg);

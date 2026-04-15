@@ -3,11 +3,33 @@ export type SourceType = "url" | "html" | "paste";
 export type ConversionSourceType = SourceType | "tab";
 export type OutputFormat = "markdown" | "json";
 
+export type ExtractionRegionKind =
+  | "main"
+  | "article"
+  | "content"
+  | "navigation"
+  | "header"
+  | "footer"
+  | "sidebar"
+  | "toc"
+  | "section";
+
+export interface ExtractionRegion {
+  id: string;
+  label: string;
+  kind: ExtractionRegionKind;
+  textLength: number;
+  linkDensity: number;
+  score: number;
+}
+
 export interface ConversionRequest {
   sourceType: SourceType;
   source: string;
   outputFormat: OutputFormat;
   mainContentOnly: boolean;
+  selectedRegionId?: string;
+  detectOnly?: boolean;
 }
 
 export interface ExtractionReport {
@@ -22,6 +44,8 @@ export interface ConversionMeta {
   source: string;
   title: string;
   convertedAt: string;
+  selectedRegionId?: string;
+  selectedRegionLabel?: string;
 }
 
 export interface ConversionJsonOutput {
@@ -67,4 +91,8 @@ export interface ConversionResponse {
   json?: ConversionJsonOutput;
   report: ExtractionReport;
   meta: ConversionMeta;
+  regions?: ExtractionRegion[];
+  defaultRegionId?: string;
+  selectedRegionId?: string;
+  selectedRegionLabel?: string;
 }

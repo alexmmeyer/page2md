@@ -9,6 +9,7 @@ type ExtractOptions = {
   sourceType: "url" | "html";
   source: string;
   mainContentOnly: boolean;
+  selectedRegionId?: string;
 };
 
 const MAIN_CANDIDATE_SELECTORS = [
@@ -92,6 +93,7 @@ export async function extractPageContent({
   sourceType,
   source,
   mainContentOnly,
+  selectedRegionId,
 }: ExtractOptions): Promise<ExtractedContent> {
   const browser = await launchBrowser();
   const page = await browser.newPage();
@@ -107,13 +109,127 @@ export async function extractPageContent({
     }
 
     const result = await page.evaluate(
-      async ({ candidateSelectors, excludedSelectors, mainOnly }) => {
+      async ({ candidateSelectors, regionCandidateSelectors, excludedSelectors, mainOnly, regionId }) => {
         const warnings: string[] = [];
         let collapsiblesAttempted = 0;
         let collapsiblesOpened = 0;
         let sequentialGroupsDetected = 0;
 
         const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+        const dedupeSpaces = (value: string) => value.replace(/\s+/g, " ").trim();
+        const toTitleCase = (value: string) =>
+          value
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" ");
+        const hashString = (value: string) => {
+          let hash = 0;
+          for (let i = 0; i < value.length; i += 1) {
+            hash = (hash << 5) - hash + value.charCodeAt(i);
+            hash |= 0;
+          }
+          return Math.abs(hash);
+        };
+        const domFingerprint = (element: HTMLElement) => {
+          const parts: string[] = [];
+          let node: HTMLElement | null = element;
+          let depth = 0;
+          while (node && depth < 6 && node !== document.body) {
+            const tag = node.tagName.toLowerCase();
+            const idPart = node.id ? `#${node.id}` : "";
+            const classPart = (node.className || "")
+              .toString()
+              .split(/\s+/)
+              .filter(Boolean)
+              .slice(0, 2)
+              .join(".");
+            const siblingIndex = node.parentElement
+              ? Array.from(node.parentElement.children)
+                  .filter((child) => (child as HTMLElement).tagName === node?.tagName)
+                  .indexOf(node) + 1
+              : 1;
+            parts.push(`${tag}${idPart}${classPart ? `.${classPart}` : ""}:nth${siblingIndex}`);
+            node = node.parentElement;
+            depth += 1;
+          }
+          return parts.join(">");
+        };
+        const classifyKind = (
+          element: HTMLElement,
+        ): "main" | "article" | "content" | "navigation" | "header" | "footer" | "sidebar" | "toc" | "section" => {
+          const tag = element.tagName.toLowerCase();
+          const role = (element.getAttribute("role") || "").toLowerCase();
+          const aria = (
+            element.getAttribute("aria-label") ||
+            element.getAttribute("aria-labelledby") ||
+            ""
+          ).toLowerCase();
+          const hint = `${tag} ${role} ${aria} ${element.id} ${element.className}`.toLowerCase();
+          if (
+            hint.includes("table of contents") ||
+            hint.includes("on this page") ||
+            hint.includes("toc")
+          ) {
+            return "toc";
+          }
+          if (tag === "nav" || role === "navigation" || hint.includes("nav") || hint.includes("menu")) {
+            return "navigation";
+          }
+          if (tag === "header") {
+            return "header";
+          }
+          if (tag === "footer") {
+            return "footer";
+          }
+          if (
+            tag === "aside" ||
+            role === "complementary" ||
+            hint.includes("sidebar") ||
+            hint.includes("rail")
+          ) {
+            return "sidebar";
+          }
+          if (tag === "main" || role === "main") {
+            return "main";
+          }
+          if (tag === "article") {
+            return "article";
+          }
+          if (hint.includes("content") || hint.includes("docs") || hint.includes("reference")) {
+            return "content";
+          }
+          return "section";
+        };
+        const labelForKind = (
+          kind: "main" | "article" | "content" | "navigation" | "header" | "footer" | "sidebar" | "toc" | "section",
+        ): string => {
+          if (kind === "main") {
+            return "Main content";
+          }
+          if (kind === "article") {
+            return "Article";
+          }
+          if (kind === "content") {
+            return "Content";
+          }
+          if (kind === "navigation") {
+            return "Navigation";
+          }
+          if (kind === "header") {
+            return "Header";
+          }
+          if (kind === "footer") {
+            return "Footer";
+          }
+          if (kind === "sidebar") {
+            return "Sidebar";
+          }
+          if (kind === "toc") {
+            return "On this page";
+          }
+          return "Section";
+        };
 
         const mainCandidates = candidateSelectors
           .flatMap((selector) =>
@@ -137,10 +253,118 @@ export async function extractPageContent({
           return textLength + Math.min(area / 1000, 2_000) - linkDensity * 1_500;
         };
 
-        const mainElement = uniqCandidates.sort(
-          (a, b) => scoreElement(b) - scoreElement(a),
-        )[0];
-        const scopeElement = mainOnly ? mainElement : document.body;
+        const mainElement = uniqCandidates.sort((a, b) => scoreElement(b) - scoreElement(a))[0];
+        const detectionRoot = mainOnly ? mainElement : document.body;
+        const regionCandidates = regionCandidateSelectors
+          .flatMap((selector) => Array.from(detectionRoot.querySelectorAll<HTMLElement>(selector)))
+          .filter(Boolean);
+        regionCandidates.push(detectionRoot);
+        const uniqueRegionCandidates = Array.from(new Set(regionCandidates));
+
+        type RegionCandidate = {
+          element: HTMLElement;
+          kind: "main" | "article" | "content" | "navigation" | "header" | "footer" | "sidebar" | "toc" | "section";
+          label: string;
+          textLength: number;
+          linkDensity: number;
+          score: number;
+          id: string;
+        };
+        const scoredRegionCandidates: RegionCandidate[] = uniqueRegionCandidates
+          .map((element) => {
+            const text = dedupeSpaces(element.innerText || "");
+            const textLength = text.length;
+            if (textLength < 80) {
+              return null;
+            }
+            const linkCount = element.querySelectorAll("a").length;
+            const nodeCount = element.querySelectorAll("*").length || 1;
+            const linkDensity = linkCount / nodeCount;
+            const area = element.clientHeight * element.clientWidth;
+            const kind = classifyKind(element);
+            const kindBonus: Record<RegionCandidate["kind"], number> = {
+              main: 900,
+              article: 700,
+              content: 500,
+              section: 250,
+              navigation: -250,
+              header: -300,
+              footer: -300,
+              sidebar: -220,
+              toc: -480,
+            };
+            const score =
+              textLength + Math.min(area / 1500, 1_600) - linkDensity * 1_300 + (kindBonus[kind] ?? 0);
+            const rawAria = dedupeSpaces(element.getAttribute("aria-label") || "");
+            const label = rawAria && rawAria.length <= 40 ? toTitleCase(rawAria) : labelForKind(kind);
+            const id = `region-${kind}-${hashString(domFingerprint(element)).toString(36)}`;
+            return { element, kind, label, textLength, linkDensity, score, id };
+          })
+          .filter((candidate): candidate is RegionCandidate => Boolean(candidate))
+          .sort((a, b) => b.score - a.score);
+
+        const dedupedRegionCandidates: RegionCandidate[] = [];
+        for (const candidate of scoredRegionCandidates) {
+          const isNearDuplicate = dedupedRegionCandidates.some((existing) => {
+            const existingContainsCandidate = existing.element.contains(candidate.element);
+            const candidateContainsExisting = candidate.element.contains(existing.element);
+            if (!existingContainsCandidate && !candidateContainsExisting) {
+              return false;
+            }
+            const bigger = Math.max(existing.textLength, candidate.textLength);
+            const smaller = Math.min(existing.textLength, candidate.textLength);
+            return smaller / bigger > 0.9;
+          });
+          if (!isNearDuplicate) {
+            dedupedRegionCandidates.push(candidate);
+          }
+          if (dedupedRegionCandidates.length >= 8) {
+            break;
+          }
+        }
+        if (dedupedRegionCandidates.length === 0) {
+          const fallbackKind = classifyKind(detectionRoot);
+          dedupedRegionCandidates.push({
+            element: detectionRoot,
+            kind: fallbackKind,
+            label: labelForKind(fallbackKind),
+            textLength: dedupeSpaces(detectionRoot.innerText || "").length,
+            linkDensity: 0,
+            score: scoreElement(detectionRoot),
+            id: `region-${fallbackKind}-${hashString(domFingerprint(detectionRoot)).toString(36)}`,
+          });
+        }
+
+        const labelCounts = new Map<string, number>();
+        const idCounts = new Map<string, number>();
+        const normalizedRegionCandidates = dedupedRegionCandidates.map((candidate) => {
+          const labelCount = (labelCounts.get(candidate.label) ?? 0) + 1;
+          labelCounts.set(candidate.label, labelCount);
+          const normalizedLabel =
+            labelCount > 1 ? `${candidate.label} ${labelCount}` : candidate.label;
+
+          const idCount = (idCounts.get(candidate.id) ?? 0) + 1;
+          idCounts.set(candidate.id, idCount);
+          const normalizedId = idCount > 1 ? `${candidate.id}-${idCount}` : candidate.id;
+
+          return { ...candidate, label: normalizedLabel, id: normalizedId };
+        });
+
+        const preferredCandidate = normalizedRegionCandidates
+          .filter((candidate) => !["navigation", "header", "footer", "sidebar", "toc"].includes(candidate.kind))
+          .sort((a, b) => b.score - a.score)[0];
+        const defaultCandidate =
+          preferredCandidate ??
+          normalizedRegionCandidates.slice().sort((a, b) => b.score - a.score)[0] ??
+          null;
+        const selectedCandidate =
+          normalizedRegionCandidates.find((candidate) => candidate.id === regionId) ?? defaultCandidate;
+        if (regionId && !selectedCandidate) {
+          warnings.push("Selected region no longer matched the page; default region was used.");
+        }
+        const scopeElement = selectedCandidate?.element ?? detectionRoot;
+        const defaultRegionId = defaultCandidate?.id;
+        const selectedRegionId = selectedCandidate?.id;
         const isIncludedInOutput = (element: Element) =>
           !excludedSelectors.some((selector) => element.closest(selector));
 
@@ -243,21 +467,23 @@ export async function extractPageContent({
           return cloneLocal.innerHTML;
         };
 
-        let html = stripExcluded(scopeElement);
-        const MIN_MEANINGFUL_HTML = 120;
-        if (html.trim().length < MIN_MEANINGFUL_HTML && document.body) {
-          const bodyHtml = stripExcluded(document.body);
-          if (bodyHtml.trim().length > html.trim().length) {
-            html = bodyHtml;
-            warnings.push(
-              "Main content region was very short; used a broader slice of the page (extra chrome may appear).",
-            );
-          }
-        }
+        const html = stripExcluded(scopeElement);
+        const regions = normalizedRegionCandidates.map((candidate) => ({
+          id: candidate.id,
+          label: candidate.label,
+          kind: candidate.kind,
+          textLength: candidate.textLength,
+          linkDensity: candidate.linkDensity,
+          score: Math.round(candidate.score),
+        }));
 
         return {
           title: document.title || "Untitled Page",
           html,
+          regions,
+          defaultRegionId,
+          selectedRegionId,
+          selectedRegionLabel: selectedCandidate?.label,
           report: {
             collapsiblesAttempted,
             collapsiblesOpened,
@@ -268,8 +494,26 @@ export async function extractPageContent({
       },
       {
         candidateSelectors: MAIN_CANDIDATE_SELECTORS,
+        regionCandidateSelectors: [
+          ...MAIN_CANDIDATE_SELECTORS,
+          "header",
+          "footer",
+          "nav",
+          "aside",
+          "section",
+          "[role='navigation']",
+          "[role='complementary']",
+          "[role='region']",
+          ".toc",
+          ".table-of-contents",
+          "[aria-label*='table of contents' i]",
+          "[aria-label*='on this page' i]",
+          "[class*='sidebar']",
+          "[class*='SideBar']",
+        ],
         excludedSelectors: EXCLUDED_SELECTORS,
         mainOnly: mainContentOnly,
+        regionId: selectedRegionId,
       },
     );
 

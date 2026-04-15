@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef } from "react";
 
+import type { ExtractionRegion } from "@/lib/types/conversion";
+
 type SourceType = "url" | "html" | "paste";
 type OutputFormat = "markdown" | "json";
 
@@ -13,6 +15,12 @@ interface ConverterFormProps {
   outputFormat: OutputFormat;
   setOutputFormat: (value: OutputFormat) => void;
   onConvert: () => void;
+  regionOptions: ExtractionRegion[];
+  selectedRegionId: string | null;
+  onSelectRegion: (regionId: string) => void;
+  showRegionChooser: boolean;
+  convertButtonLabel: string;
+  loadingButtonLabel?: string;
   loading: boolean;
 }
 
@@ -24,6 +32,12 @@ export function ConverterForm({
   outputFormat,
   setOutputFormat,
   onConvert,
+  regionOptions,
+  selectedRegionId,
+  onSelectRegion,
+  showRegionChooser,
+  convertButtonLabel,
+  loadingButtonLabel,
   loading,
 }: ConverterFormProps) {
   const urlInputRef = useRef<HTMLInputElement | null>(null);
@@ -220,6 +234,30 @@ export function ConverterForm({
         </div>
       )}
 
+      {showRegionChooser ? (
+        <div className="regionPicker" role="group" aria-label="Detected content regions">
+          <p className="fieldLabel">Detected regions</p>
+          <div className="regionOptions">
+            {regionOptions.map((region) => {
+              const isActive = selectedRegionId === region.id;
+              const summary = `${Math.round(region.score)} score · ${region.textLength.toLocaleString()} chars`;
+              return (
+                <button
+                  key={region.id}
+                  type="button"
+                  className={isActive ? "regionOption active" : "regionOption"}
+                  onClick={() => onSelectRegion(region.id)}
+                  aria-pressed={isActive}
+                >
+                  <span className="regionOptionTitle">{region.label}</span>
+                  <span className="regionOptionMeta">{summary}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       <div className="row">
         <label className="fieldLabel" htmlFor="outputFormat">
           Output
@@ -250,7 +288,7 @@ export function ConverterForm({
       >
         <span className="convertButtonContent">
           {loading ? <span className="buttonSpinner" aria-hidden="true" /> : null}
-          <span>{loading ? "Converting..." : "Convert"}</span>
+          <span>{loading ? (loadingButtonLabel ?? "Converting...") : convertButtonLabel}</span>
         </span>
       </button>
     </section>
