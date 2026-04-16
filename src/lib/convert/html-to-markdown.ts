@@ -51,34 +51,24 @@ function isFirstTbodyForHeader(tr: Element): boolean {
   return isSkippableBeforeFirstTbody(parent.previousSibling);
 }
 
-function rowIsAllTh(tr: Element): boolean {
-  const cells = tr.children;
-  if (cells.length === 0) {
-    return false;
-  }
-  for (let i = 0; i < cells.length; i++) {
-    if (cells[i].nodeName !== "TH") {
-      return false;
-    }
-  }
-  return true;
-}
-
+/**
+ * Treat the first row of any table as the GFM heading row, regardless of
+ * whether it uses <th> or <td>. This keeps conversion source-agnostic:
+ * Google Docs, Notion, Confluence, and arbitrary web content all become
+ * proper markdown pipe tables without any per-source heuristics.
+ */
 function isGfmHeadingRow(tr: Element): boolean {
   const parent = tr.parentElement;
   if (!parent) {
     return false;
   }
   if (parent.nodeName === "THEAD") {
-    return rowIsAllTh(tr);
+    return parent.firstElementChild === tr;
   }
   if (parent.firstElementChild !== tr) {
     return false;
   }
-  if (parent.nodeName === "TABLE" || isFirstTbodyForHeader(tr)) {
-    return rowIsAllTh(tr);
-  }
-  return false;
+  return parent.nodeName === "TABLE" || isFirstTbodyForHeader(tr);
 }
 
 function tableCellPrefix(node: Element): string {
@@ -107,12 +97,15 @@ function normalizeTableCellContent(content: string, node: Element): string {
     .replace(/\s+/g, " ")
     .trim();
 
-  // Confluence headers are often <th><p><strong>Header</strong></p></th>.
-  // In markdown tables, the header row itself already implies emphasis.
-  const withoutRedundantHeaderBold =
-    node.nodeName === "TH"
-      ? compact.replace(/^\*\*(.+)\*\*$/u, "$1")
-      : compact;
+  // Header cells don't need explicit bold — the GFM heading row implies it.
+  // This covers both semantic <th> and Google Docs-style bold <td> in heading rows.
+  const parentRow = node.parentElement;
+  const isInHeadingRow =
+    node.nodeName === "TH" ||
+    (parentRow != null && isGfmHeadingRow(parentRow));
+  const withoutRedundantHeaderBold = isInHeadingRow
+    ? compact.replace(/^\*\*(.+)\*\*$/u, "$1")
+    : compact;
 
   // Keep literal pipes inside a cell from being interpreted as column splits.
   return withoutRedundantHeaderBold.replace(/(?<!\\)\|/g, "\\|");
@@ -152,9 +145,7 @@ const gfmTableFixed: TurndownService.Rule = {
     if (node.nodeName !== "TABLE") {
       return false;
     }
-    const table = node as HTMLTableElement;
-    const firstRow = table.rows[0];
-    return !!firstRow && isGfmHeadingRow(firstRow);
+    return (node as HTMLTableElement).rows.length > 0;
   },
   replacement(content) {
     const normalized = content.replace(/\n{2,}/g, "\n");
