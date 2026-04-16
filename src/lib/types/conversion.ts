@@ -2,6 +2,8 @@ export type SourceType = "url" | "html" | "paste";
 /** Includes extension-only `"tab"` (current browser page). */
 export type ConversionSourceType = SourceType | "tab";
 export type OutputFormat = "markdown" | "json";
+export type ConversionEngine = "deterministic" | "ai";
+export type AiStage = "detect" | "convert";
 
 export type ExtractionRegionKind =
   | "main"
@@ -17,9 +19,21 @@ export type ExtractionRegionKind =
 export interface ExtractionRegion {
   id: string;
   label: string;
+  description?: string;
+  previewText?: string;
   kind: ExtractionRegionKind;
   textLength: number;
   linkDensity: number;
+  score: number;
+}
+
+export interface AiRegionCandidate {
+  id: string;
+  label: string;
+  description?: string;
+  sourceRegionId?: string;
+  confidence: number;
+  rationale: string;
   score: number;
 }
 
@@ -30,6 +44,19 @@ export interface ConversionRequest {
   mainContentOnly: boolean;
   selectedRegionId?: string;
   detectOnly?: boolean;
+  engine?: ConversionEngine;
+}
+
+export interface AiConversionRequest {
+  engine: "ai";
+  stage: AiStage;
+  sourceType: ConversionSourceType;
+  source: string;
+  outputFormat: OutputFormat;
+  selectedRegionId?: string;
+  selectedRegionHtml?: string;
+  preDetectedRegions?: ExtractionRegion[];
+  titleHint?: string;
 }
 
 export interface ExtractionReport {
@@ -86,6 +113,7 @@ export type ConversionBlock =
     };
 
 export interface ConversionResponse {
+  engine?: ConversionEngine;
   outputFormat: OutputFormat;
   markdown?: string;
   json?: ConversionJsonOutput;
@@ -95,4 +123,15 @@ export interface ConversionResponse {
   defaultRegionId?: string;
   selectedRegionId?: string;
   selectedRegionLabel?: string;
+}
+
+export interface AiConversionResponse extends ConversionResponse {
+  engine: "ai";
+  stage: AiStage;
+  aiRegions?: AiRegionCandidate[];
+  selectedAiRegionId?: string;
+  selectedAiRegionLabel?: string;
+  model?: string;
+  fallbackUsed?: boolean;
+  aiWarnings?: string[];
 }

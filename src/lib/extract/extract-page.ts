@@ -101,11 +101,12 @@ export async function extractPageContent({
   try {
     if (sourceType === "url") {
       await page.goto(source, {
-        waitUntil: "networkidle",
+        waitUntil: "domcontentloaded",
         timeout: 30_000,
       });
+      await page.waitForTimeout(1_500);
     } else {
-      await page.setContent(source, { waitUntil: "networkidle" });
+      await page.setContent(source, { waitUntil: "domcontentloaded" });
     }
 
     const result = await page.evaluate(
@@ -230,6 +231,19 @@ export async function extractPageContent({
           }
           return "Section";
         };
+        const previewTextFor = (value: string) => {
+          const compact = dedupeSpaces(value);
+          if (!compact) {
+            return "";
+          }
+          const sentences = compact
+            .split(/(?<=[.?!])\s+/)
+            .map((part) => part.trim())
+            .filter(Boolean);
+          const merged = sentences.slice(0, 2).join(" ");
+          const candidate = merged || compact;
+          return candidate.length > 180 ? `${candidate.slice(0, 177)}...` : candidate;
+        };
 
         const mainCandidates = candidateSelectors
           .flatMap((selector) =>
@@ -265,23 +279,37 @@ export async function extractPageContent({
           element: HTMLElement;
           kind: "main" | "article" | "content" | "navigation" | "header" | "footer" | "sidebar" | "toc" | "section";
           label: string;
+          previewText: string;
           textLength: number;
           linkDensity: number;
           score: number;
           id: string;
         };
+        const CANDIDATE_LIMIT = 8;
+        const PRESERVE_KINDS: RegionCandidate["kind"][] = ["toc", "navigation", "sidebar"];
         const scoredRegionCandidates: RegionCandidate[] = uniqueRegionCandidates
           .map((element) => {
             const text = dedupeSpaces(element.innerText || "");
             const textLength = text.length;
-            if (textLength < 80) {
+            const kind = classifyKind(element);
+            const minTextLengthByKind: Record<RegionCandidate["kind"], number> = {
+              main: 140,
+              article: 120,
+              content: 100,
+              section: 90,
+              navigation: 40,
+              header: 30,
+              footer: 30,
+              sidebar: 40,
+              toc: 30,
+            };
+            if (textLength < minTextLengthByKind[kind]) {
               return null;
             }
             const linkCount = element.querySelectorAll("a").length;
             const nodeCount = element.querySelectorAll("*").length || 1;
             const linkDensity = linkCount / nodeCount;
             const area = element.clientHeight * element.clientWidth;
-            const kind = classifyKind(element);
             const kindBonus: Record<RegionCandidate["kind"], number> = {
               main: 900,
               article: 700,
@@ -293,19 +321,54 @@ export async function extractPageContent({
               sidebar: -220,
               toc: -480,
             };
+            const isStructuralKind = ["navigation", "header", "footer", "sidebar", "toc"].includes(kind);
+            const appearsToWrapMainContent =
+              element === detectionRoot ||
+              element.contains(mainElement) ||
+              element.querySelector("main, article, [role='main']") !== null;
+            const structuralContainPenalty =
+              isStructuralKind && appearsToWrapMainContent ? textLength * 0.18 : 0;
             const score =
-              textLength + Math.min(area / 1500, 1_600) - linkDensity * 1_300 + (kindBonus[kind] ?? 0);
+              textLength +
+              Math.min(area / 1500, 1_600) -
+              linkDensity * 1_300 +
+              (kindBonus[kind] ?? 0) -
+              structuralContainPenalty;
             const rawAria = dedupeSpaces(element.getAttribute("aria-label") || "");
             const label = rawAria && rawAria.length <= 40 ? toTitleCase(rawAria) : labelForKind(kind);
             const id = `region-${kind}-${hashString(domFingerprint(element)).toString(36)}`;
-            return { element, kind, label, textLength, linkDensity, score, id };
+            return {
+              element,
+              kind,
+              label,
+              previewText: previewTextFor(text),
+              textLength,
+              linkDensity,
+              score,
+              id,
+            };
           })
           .filter((candidate): candidate is RegionCandidate => Boolean(candidate))
           .sort((a, b) => b.score - a.score);
 
+        const contentKinds = new Set<RegionCandidate["kind"]>(["main", "article", "content", "section"]);
+        const qualityRank = (candidate: RegionCandidate) => {
+          const kindPriority: Record<RegionCandidate["kind"], number> = {
+            article: 5,
+            main: 4,
+            content: 3,
+            section: 2,
+            toc: 5,
+            sidebar: 4,
+            navigation: 3,
+            header: 2,
+            footer: 2,
+          };
+          return candidate.score + (kindPriority[candidate.kind] ?? 0) * 180 - candidate.linkDensity * 300;
+        };
         const dedupedRegionCandidates: RegionCandidate[] = [];
         for (const candidate of scoredRegionCandidates) {
-          const isNearDuplicate = dedupedRegionCandidates.some((existing) => {
+          const overlappingIndex = dedupedRegionCandidates.findIndex((existing) => {
             const existingContainsCandidate = existing.element.contains(candidate.element);
             const candidateContainsExisting = candidate.element.contains(existing.element);
             if (!existingContainsCandidate && !candidateContainsExisting) {
@@ -313,13 +376,17 @@ export async function extractPageContent({
             }
             const bigger = Math.max(existing.textLength, candidate.textLength);
             const smaller = Math.min(existing.textLength, candidate.textLength);
-            return smaller / bigger > 0.9;
+            const overlapRatio = smaller / bigger;
+            if (overlapRatio > 0.9) {
+              return true;
+            }
+            const bothContentLike = contentKinds.has(existing.kind) && contentKinds.has(candidate.kind);
+            return bothContentLike && overlapRatio > 0.58;
           });
-          if (!isNearDuplicate) {
+          if (overlappingIndex === -1) {
             dedupedRegionCandidates.push(candidate);
-          }
-          if (dedupedRegionCandidates.length >= 8) {
-            break;
+          } else if (qualityRank(candidate) > qualityRank(dedupedRegionCandidates[overlappingIndex])) {
+            dedupedRegionCandidates[overlappingIndex] = candidate;
           }
         }
         if (dedupedRegionCandidates.length === 0) {
@@ -328,6 +395,7 @@ export async function extractPageContent({
             element: detectionRoot,
             kind: fallbackKind,
             label: labelForKind(fallbackKind),
+            previewText: previewTextFor(dedupeSpaces(detectionRoot.innerText || "")),
             textLength: dedupeSpaces(detectionRoot.innerText || "").length,
             linkDensity: 0,
             score: scoreElement(detectionRoot),
@@ -335,9 +403,31 @@ export async function extractPageContent({
           });
         }
 
+        const byScore = dedupedRegionCandidates.slice().sort((a, b) => b.score - a.score);
+        const selectedIds = new Set<string>();
+        const boundedRegionCandidates: RegionCandidate[] = [];
+        for (const kind of PRESERVE_KINDS) {
+          const match = byScore.find((candidate) => candidate.kind === kind);
+          if (!match || selectedIds.has(match.id)) {
+            continue;
+          }
+          boundedRegionCandidates.push(match);
+          selectedIds.add(match.id);
+        }
+        for (const candidate of byScore) {
+          if (selectedIds.has(candidate.id)) {
+            continue;
+          }
+          boundedRegionCandidates.push(candidate);
+          selectedIds.add(candidate.id);
+          if (boundedRegionCandidates.length >= CANDIDATE_LIMIT) {
+            break;
+          }
+        }
+
         const labelCounts = new Map<string, number>();
         const idCounts = new Map<string, number>();
-        const normalizedRegionCandidates = dedupedRegionCandidates.map((candidate) => {
+        const normalizedRegionCandidates = boundedRegionCandidates.map((candidate) => {
           const labelCount = (labelCounts.get(candidate.label) ?? 0) + 1;
           labelCounts.set(candidate.label, labelCount);
           const normalizedLabel =
@@ -386,26 +476,76 @@ export async function extractPageContent({
           collapsiblesOpened += 1;
         }
 
+        const expandTextHints = [
+          "show more",
+          "expand",
+          "open section",
+          "open details",
+          "read more",
+          "view more",
+          "see more",
+        ];
+        const blockedTextHints = [
+          "loom",
+          "record",
+          "camera",
+          "video",
+          "screen",
+          "share",
+          "feedback",
+          "support",
+          "help",
+          "chat",
+          "assistant",
+        ];
         const buttons = Array.from(
-          scopeElement.querySelectorAll<HTMLElement>(
-            "button, [role='button'], [role='tab']",
-          ),
+          scopeElement.querySelectorAll<HTMLElement>("button, [role='button'], [role='tab']"),
         ).filter((el) => {
           if (!isIncludedInOutput(el)) {
             return false;
           }
-          const text = (el.textContent || "").toLowerCase();
+          if (
+            el.closest("[role='toolbar']") ||
+            el.closest("[class*='action']") ||
+            el.closest("[class*='floating']") ||
+            el.closest("[class*='Loom']")
+          ) {
+            return false;
+          }
+
+          const style = window.getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          const area = rect.width * rect.height;
+          const isFloatingSmallControl =
+            (style.position === "fixed" || style.position === "sticky") &&
+            rect.width <= 260 &&
+            rect.height <= 260;
+          if (isFloatingSmallControl || area < 500) {
+            return false;
+          }
+
+          const semanticText = dedupeSpaces(
+            `${el.textContent || ""} ${el.getAttribute("aria-label") || ""}`,
+          ).toLowerCase();
+          if (blockedTextHints.some((hint) => semanticText.includes(hint))) {
+            return false;
+          }
+
           const expanded = el.getAttribute("aria-expanded");
-          const isBulkToggle =
-            text.includes("expand all") || text.includes("collapse all");
-          return (
-            !isBulkToggle &&
-            (expanded === "false" ||
-              expanded === "true" ||
-              text.includes("show more") ||
-              text.includes("expand") ||
-              text.includes("open"))
+          const ariaControls = dedupeSpaces(el.getAttribute("aria-controls") || "");
+          const attrHints = dedupeSpaces(
+            `${el.id} ${el.className} ${el.getAttribute("data-testid") || ""} ${el.getAttribute("data-qa") || ""}`,
+          ).toLowerCase();
+          const hasExpandText = expandTextHints.some((hint) => semanticText.includes(hint));
+          const hasAccordionHint = /accordion|collapse|expand|disclosure|toggle|details|section|faq/.test(
+            attrHints,
           );
+          const isBulkToggle =
+            semanticText.includes("expand all") || semanticText.includes("collapse all");
+          if (isBulkToggle) {
+            return false;
+          }
+          return expanded === "false" || hasExpandText || hasAccordionHint || ariaControls.length > 0;
         });
         const uniqueButtons = Array.from(new Set(buttons));
 
@@ -471,6 +611,7 @@ export async function extractPageContent({
         const regions = normalizedRegionCandidates.map((candidate) => ({
           id: candidate.id,
           label: candidate.label,
+          previewText: candidate.previewText,
           kind: candidate.kind,
           textLength: candidate.textLength,
           linkDensity: candidate.linkDensity,

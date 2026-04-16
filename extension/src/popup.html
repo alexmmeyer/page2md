@@ -25,9 +25,17 @@
 
       <section id="panel-convert" class="panel" role="tabpanel">
         <p id="error" class="errorText" hidden></p>
-        <button type="button" id="convertBtn" class="primaryButton">Convert this page</button>
+        <div class="convertActions">
+          <button type="button" id="convertBtn" class="primaryButton">Convert this page</button>
+          <button type="button" id="convertAiBtn" class="primaryButton primaryButton--ai">
+            Convert with AI
+          </button>
+        </div>
+        <p class="muted muted--privacy">
+          AI mode sends selected page content to the server for processing.
+        </p>
         <section id="regionPicker" class="regionPicker" hidden>
-          <p id="regionPickerLabel" class="fieldLabel">Select a content region</p>
+          <p id="regionPickerLabel" class="regionPickerHeading">Select a page content region to convert</p>
           <div id="regionOptions" class="regionOptions"></div>
         </section>
         <div

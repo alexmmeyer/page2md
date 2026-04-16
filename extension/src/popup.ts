@@ -5,6 +5,7 @@ import {
   type DomExtractedContent,
 } from "@/lib/extract/dom-main-content";
 import type {
+  AiConversionResponse,
   ConversionMeta,
   ConversionSourceType,
   ExtractionRegion,
@@ -175,6 +176,7 @@ async function saveState(state: PersistedState): Promise<void> {
 const el = {
   error: document.getElementById("error") as HTMLParagraphElement,
   convertBtn: document.getElementById("convertBtn") as HTMLButtonElement,
+  convertAiBtn: document.getElementById("convertAiBtn") as HTMLButtonElement,
   regionPicker: document.getElementById("regionPicker") as HTMLElement,
   regionPickerLabel: document.getElementById("regionPickerLabel") as HTMLElement,
   regionOptions: document.getElementById("regionOptions") as HTMLElement,
@@ -204,6 +206,7 @@ let currentReport: ExtractionReport | null = null;
 let currentSourceType: ConversionSourceType | null = null;
 let pendingRegionSelection:
   | {
+      mode: "deterministic" | "ai";
       tabId: number;
       tabUrl: string;
       tabTitle: string;
@@ -345,11 +348,41 @@ function setError(message: string) {
   el.error.textContent = message;
 }
 
+function setActionButtonsDisabled(disabled: boolean) {
+  el.convertBtn.disabled = disabled;
+  el.convertAiBtn.disabled = disabled;
+}
+
+function resolveAiApiBase(tabUrl: string): string {
+  const fallback = "https://amm-page2md.vercel.app";
+  try {
+    const parsed = new URL(tabUrl);
+    if (
+      parsed.origin === "http://localhost:3000" ||
+      parsed.origin === "https://amm-page2md.vercel.app"
+    ) {
+      return parsed.origin;
+    }
+  } catch {
+    // Ignore parse errors and use default.
+  }
+  return fallback;
+}
+
 function clearRegionSelection() {
   pendingRegionSelection = null;
   el.regionPicker.hidden = true;
   el.regionOptions.replaceChildren();
   el.convertBtn.textContent = "Convert this page";
+  el.convertAiBtn.textContent = "Convert with AI";
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function renderRegionSelection() {
@@ -359,23 +392,41 @@ function renderRegionSelection() {
   }
   el.regionPicker.hidden = false;
   el.regionOptions.replaceChildren();
-  el.regionPickerLabel.textContent = "Select a content region";
+  el.regionPickerLabel.textContent = "Select a page content region to convert";
+  const aiMode = pendingRegionSelection.mode === "ai";
   for (const region of pendingRegionSelection.regions) {
     const button = document.createElement("button");
     button.type = "button";
     const isSelected = pendingRegionSelection.selectedRegionId === region.id;
-    button.className = isSelected ? "regionOption active" : "regionOption";
+    button.className = isSelected ? "regionTile active" : "regionTile";
     button.setAttribute("aria-pressed", String(isSelected));
+    const charLabel = `${region.textLength.toLocaleString()} chars`;
+    const descHtml = region.description
+      ? `<span class="regionTileDesc">${escapeHtml(region.description)}</span>`
+      : "";
     button.innerHTML = `
-      <span class="regionOptionTitle">${region.label}</span>
-      <span class="regionOptionMeta">${Math.round(region.score)} score · ${region.textLength.toLocaleString()} chars</span>
+      <span class="regionTileHeader">
+        <span class="regionTileTitle">${escapeHtml(region.label)}</span>
+        <span class="regionTileChars">${charLabel}</span>
+      </span>
+      ${descHtml}
     `;
     button.addEventListener("click", () => {
+      if (aiMode) {
+        void handleConvertSelectedRegionWithAi(region.id);
+        return;
+      }
       void handleConvertSelectedRegion(region.id);
     });
     el.regionOptions.appendChild(button);
   }
-  el.convertBtn.textContent = "Detect regions again";
+  if (aiMode) {
+    el.convertBtn.textContent = "Convert this page";
+    el.convertAiBtn.textContent = "Detect AI regions again";
+  } else {
+    el.convertAiBtn.textContent = "Convert with AI";
+    el.convertBtn.textContent = "Detect regions again";
+  }
 }
 
 function showTab(which: "convert" | "history") {
@@ -541,7 +592,7 @@ async function handleDeleteHistoryItem(id: string) {
 
 async function handleConvert() {
   setError("");
-  el.convertBtn.disabled = true;
+  setActionButtonsDisabled(true);
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const check = canScriptTab(tab?.url);
@@ -557,7 +608,7 @@ async function handleConvert() {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: extractDomMainContent,
-      args: [true],
+      args: [false],
     });
 
     const extracted = pickBestFrameResult(results);
@@ -569,6 +620,7 @@ async function handleConvert() {
       return;
     }
     pendingRegionSelection = {
+      mode: "deterministic",
       tabId: tab.id,
       tabUrl: tab.url ?? "",
       tabTitle: extracted.title,
@@ -582,7 +634,7 @@ async function handleConvert() {
     const message = err instanceof Error ? err.message : "Conversion failed.";
     setError(message);
   } finally {
-    el.convertBtn.disabled = false;
+    setActionButtonsDisabled(false);
   }
 }
 
@@ -592,7 +644,7 @@ async function handleConvertSelectedRegion(regionId: string) {
     return;
   }
   setError("");
-  el.convertBtn.disabled = true;
+  setActionButtonsDisabled(true);
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const check = canScriptTab(tab?.url);
@@ -608,7 +660,7 @@ async function handleConvertSelectedRegion(regionId: string) {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: extractDomMainContent,
-      args: [true, regionId],
+      args: [false, regionId],
     });
     const extracted = pickBestFrameResult(results);
 
@@ -660,7 +712,204 @@ async function handleConvertSelectedRegion(regionId: string) {
     const message = err instanceof Error ? err.message : "Conversion failed.";
     setError(message);
   } finally {
-    el.convertBtn.disabled = false;
+    setActionButtonsDisabled(false);
+  }
+}
+
+async function handleDetectRegionsWithAi() {
+  setError("");
+  setActionButtonsDisabled(true);
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const check = canScriptTab(tab?.url);
+    if (!check.ok) {
+      setError(check.reason);
+      return;
+    }
+    if (tab?.id === undefined) {
+      setError("Could not read the active tab.");
+      return;
+    }
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: extractDomMainContent,
+      args: [false],
+    });
+    const extracted = pickBestFrameResult(results);
+    if (!extracted?.regions?.length) {
+      setError("No regions were extracted for AI detection.");
+      return;
+    }
+
+    const apiBase = resolveAiApiBase(tab.url ?? "");
+    const detectResponse = await fetch(`${apiBase}/api/convert-ai`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        engine: "ai",
+        stage: "detect",
+        sourceType: "tab",
+        source: tab.url ?? "",
+        outputFormat: "markdown",
+        titleHint: extracted.title,
+        preDetectedRegions: extracted.regions,
+      }),
+    });
+    const detectPayload = await detectResponse.json();
+    if (!detectResponse.ok) {
+      throw new Error(detectPayload.error ?? "AI region detection failed.");
+    }
+    const detection = detectPayload as AiConversionResponse;
+    const aiRegions = detection.aiRegions ?? [];
+    if (aiRegions.length === 0) {
+      throw new Error("AI did not return any useful regions.");
+    }
+    const byId = new Map(extracted.regions.map((region) => [region.id, region]));
+    const rankedRegions: ExtractionRegion[] = [];
+    for (const aiRegion of aiRegions) {
+      const sourceRegion = byId.get(aiRegion.sourceRegionId ?? "");
+      if (!sourceRegion) continue;
+      const mapped: ExtractionRegion = {
+        ...sourceRegion,
+        label: aiRegion.label,
+        score: aiRegion.score,
+      };
+      if (aiRegion.description) {
+        mapped.description = aiRegion.description;
+      }
+      rankedRegions.push(mapped);
+    }
+    if (rankedRegions.length === 0) {
+      throw new Error("AI regions could not be mapped to extracted regions.");
+    }
+
+    const defaultRegionId = detection.defaultRegionId ?? rankedRegions[0]?.id ?? null;
+    pendingRegionSelection = {
+      mode: "ai",
+      tabId: tab.id,
+      tabUrl: tab.url ?? "",
+      tabTitle: extracted.title,
+      regions: rankedRegions,
+      selectedRegionId: defaultRegionId,
+    };
+    setCurrentReport(
+      {
+        ...extracted.report,
+        warnings: [
+          ...extracted.report.warnings,
+          ...(detection.aiWarnings ?? []),
+        ],
+      },
+      "tab",
+    );
+    renderRegionSelection();
+    showTab("convert");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "AI detection failed.";
+    setError(message);
+  } finally {
+    setActionButtonsDisabled(false);
+  }
+}
+
+async function handleConvertSelectedRegionWithAi(regionId: string) {
+  if (!pendingRegionSelection) {
+    setError("Detect AI regions first.");
+    return;
+  }
+  setError("");
+  setActionButtonsDisabled(true);
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const check = canScriptTab(tab?.url);
+    if (!check.ok) {
+      setError(check.reason);
+      return;
+    }
+    if (tab?.id === undefined) {
+      setError("Could not read the active tab.");
+      return;
+    }
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: extractDomMainContent,
+      args: [false, regionId],
+    });
+    const extracted = pickBestFrameResult(results);
+    if (!extracted?.html?.trim()) {
+      throw new Error("No content was extracted for the selected AI region.");
+    }
+
+    const apiBase = resolveAiApiBase(tab.url ?? pendingRegionSelection.tabUrl);
+    const convertResponse = await fetch(`${apiBase}/api/convert-ai`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        engine: "ai",
+        stage: "convert",
+        sourceType: "tab",
+        source: tab.url ?? pendingRegionSelection.tabUrl,
+        outputFormat: "markdown",
+        selectedRegionId: regionId,
+        selectedRegionHtml: extracted.html,
+        titleHint: extracted.title,
+        preDetectedRegions: pendingRegionSelection.regions,
+      }),
+    });
+    const convertPayload = await convertResponse.json();
+    if (!convertResponse.ok) {
+      throw new Error(convertPayload.error ?? "AI conversion failed.");
+    }
+    const conversion = convertPayload as AiConversionResponse;
+    const finalMarkdown = conversion.markdown ?? "";
+    if (!finalMarkdown.trim()) {
+      throw new Error("AI conversion returned empty markdown.");
+    }
+
+    const baseForTitle = finalMarkdown;
+    const heading = firstHeadingFromMarkdown(baseForTitle);
+    const itemTitle = plainTitle(
+      heading || conversion.meta.title || extracted.title || "Untitled AI conversion",
+    );
+    const historyItem: ExtensionHistoryItem = {
+      id:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      createdAt: conversion.meta.convertedAt,
+      sourceType: "tab",
+      outputFormat: "markdown",
+      title: itemTitle,
+      preview: conversionPreview(baseForTitle),
+      markdown: finalMarkdown,
+      report: {
+        ...conversion.report,
+        warnings: [
+          ...conversion.report.warnings,
+          ...(conversion.aiWarnings ?? []),
+        ],
+      },
+      meta: conversion.meta,
+    };
+
+    state.items = [historyItem, ...state.items].slice(0, SHARED_HISTORY_MAX_ITEMS);
+    state.activeId = historyItem.id;
+    setPreviewOutput(finalMarkdown, "markdown");
+    setCurrentReport(historyItem.report, "tab");
+    await saveState(state);
+    renderHistory();
+    clearRegionSelection();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "AI conversion failed.";
+    setError(message);
+  } finally {
+    setActionButtonsDisabled(false);
   }
 }
 
@@ -716,6 +965,7 @@ el.tabHistory.addEventListener("click", () => showTab("history"));
 el.historySearch.addEventListener("input", () => renderHistory());
 el.clearHistoryBtn.addEventListener("click", () => void handleClearHistory());
 el.convertBtn.addEventListener("click", () => void handleConvert());
+el.convertAiBtn.addEventListener("click", () => void handleDetectRegionsWithAi());
 el.copyBtn.addEventListener("click", () => void handleCopy());
 el.copyBtn.addEventListener("animationend", (event) => {
   if (event.animationName === "copyButtonFlash") {

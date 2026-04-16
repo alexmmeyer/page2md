@@ -15,6 +15,7 @@ import {
   type SharedHistoryItem,
 } from "@/lib/history/shared-history";
 import type {
+  AiConversionResponse,
   ConversionJsonOutput,
   ExtractionRegion,
   ConversionResponse,
@@ -287,6 +288,7 @@ export default function Home() {
   });
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("markdown");
   const [loading, setLoading] = useState(false);
+  const [loadingAi, setLoadingAi] = useState(false);
   const [error, setError] = useState("");
   const [markdown, setMarkdown] = useState("");
   const [json, setJson] = useState<ConversionJsonOutput | null>(null);
@@ -296,6 +298,9 @@ export default function Home() {
   const [detectedRegions, setDetectedRegions] = useState<ExtractionRegion[]>([]);
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
   const [detectedUrlSource, setDetectedUrlSource] = useState<string | null>(null);
+  const [regionSelectionEngine, setRegionSelectionEngine] = useState<
+    "deterministic" | "ai" | null
+  >(null);
   const [historyItems, setHistoryItems] = useState<SharedHistoryItem[]>([]);
   const historyBridgeRef = useRef<HistoryBridgeApi | null>(null);
   const syncingFromExtensionRef = useRef(false);
@@ -309,18 +314,14 @@ export default function Home() {
   );
   const source = sourcesByType[sourceType];
   const showRegionChooser = sourceType === "url" && detectedRegions.length > 0;
-  const convertButtonLabel =
-    sourceType === "url"
-      ? showRegionChooser
-        ? "Convert selected region"
-        : "Detect regions"
-      : "Convert";
-  const loadingButtonLabel =
-    sourceType === "url"
-      ? showRegionChooser
-        ? "Converting selected region..."
-        : "Detecting regions..."
-      : "Converting...";
+  const convertButtonLabel = "Convert";
+  const loadingButtonLabel = "Converting...";
+  const convertWithAiButtonLabel = "Convert with AI";
+  const loadingAiButtonLabel =
+    sourceType === "url" && (!showRegionChooser || regionSelectionEngine !== "ai")
+      ? "Detecting with AI..."
+      : "Converting with AI...";
+  const regionChooserLabel = "Select a page content region to convert";
 
   useEffect(() => {
     setIsChromeBrowser(isGoogleChromeDesktop());
@@ -410,6 +411,7 @@ export default function Home() {
         setDetectedRegions([]);
         setSelectedRegionId(null);
         setDetectedUrlSource(null);
+        setRegionSelectionEngine(null);
       }
       return;
     }
@@ -417,6 +419,7 @@ export default function Home() {
       setDetectedRegions([]);
       setSelectedRegionId(null);
       setDetectedUrlSource(null);
+      setRegionSelectionEngine(null);
     }
   }, [sourceType, source, detectedRegions.length, selectedRegionId, detectedUrlSource]);
 
@@ -428,6 +431,9 @@ export default function Home() {
   }
 
   async function handleConvert() {
+    if (loading || loadingAi) {
+      return;
+    }
     if (source.trim().length === 0) {
       setError("Please provide input before converting.");
       return;
@@ -436,49 +442,6 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      if (
-        sourceType === "url" &&
-        (detectedRegions.length === 0 || detectedUrlSource !== source)
-      ) {
-        const detectResponse = await fetch("/api/convert", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            sourceType,
-            source,
-            outputFormat,
-            mainContentOnly: true,
-            detectOnly: true,
-          }),
-        });
-        const detectPayload = await detectResponse.json();
-        if (!detectResponse.ok) {
-          throw new Error(detectPayload.error ?? "Could not detect page regions.");
-        }
-        const detection = detectPayload as ConversionResponse;
-        const regions = detection.regions ?? [];
-        if (regions.length === 0) {
-          throw new Error("No content regions were detected for this page.");
-        }
-        const defaultRegionId = detection.defaultRegionId ?? regions[0]?.id ?? null;
-        setDetectedRegions(regions);
-        setSelectedRegionId(defaultRegionId);
-        setDetectedUrlSource(source);
-        setOutputSourceType(detection.meta.sourceType);
-        setReport(detection.report);
-        setTitle(
-          detection.meta.title
-            ? `${detection.meta.title} (select a region)`
-            : "Select a region to convert",
-        );
-        return;
-      }
-      if (sourceType === "url" && !selectedRegionId) {
-        throw new Error("Select a content region first.");
-      }
-
       const response = await fetch("/api/convert", {
         method: "POST",
         headers: {
@@ -489,7 +452,6 @@ export default function Home() {
           source,
           outputFormat,
           mainContentOnly: true,
-          selectedRegionId: sourceType === "url" ? selectedRegionId : undefined,
         }),
       });
 
@@ -537,6 +499,162 @@ export default function Home() {
       setError(message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleConvertWithAi() {
+    if (loading || loadingAi) {
+      return;
+    }
+    if (source.trim().length === 0) {
+      setError("Please provide input before converting.");
+      return;
+    }
+
+    setLoadingAi(true);
+    setError("");
+    try {
+      if (
+        sourceType === "url" &&
+        (detectedRegions.length === 0 ||
+          detectedUrlSource !== source ||
+          regionSelectionEngine !== "ai")
+      ) {
+        const detectResponse = await fetch("/api/convert-ai", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            engine: "ai",
+            stage: "detect",
+            sourceType,
+            source,
+            outputFormat,
+          }),
+        });
+        const detectPayload = await detectResponse.json();
+        if (!detectResponse.ok) {
+          throw new Error(detectPayload.error ?? "Could not detect regions with AI.");
+        }
+        const detection = detectPayload as AiConversionResponse;
+        const sourceRegions = detection.regions ?? [];
+        const aiRegions = detection.aiRegions ?? [];
+        const nextRegions: ExtractionRegion[] = [];
+        for (const aiRegion of aiRegions) {
+          const sourceRegion = sourceRegions.find(
+            (candidate) => candidate.id === aiRegion.sourceRegionId,
+          );
+          if (!sourceRegion) continue;
+          const region: ExtractionRegion = {
+            ...sourceRegion,
+            id: sourceRegion.id,
+            label: aiRegion.label,
+            score: aiRegion.score,
+          };
+          if (aiRegion.description) {
+            region.description = aiRegion.description;
+          }
+          nextRegions.push(region);
+        }
+
+        if (nextRegions.length === 0) {
+          throw new Error("No AI regions were detected for this page.");
+        }
+        const defaultRegionId = detection.defaultRegionId ?? nextRegions[0]?.id ?? null;
+        setDetectedRegions(nextRegions);
+        setSelectedRegionId(defaultRegionId);
+        setDetectedUrlSource(source);
+        setRegionSelectionEngine("ai");
+        setOutputSourceType(detection.meta.sourceType);
+        setReport(detection.report);
+        setTitle(detection.meta.title || "Select a region to convert");
+        return;
+      }
+
+      await runAiConvert();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unexpected error.";
+      setError(message);
+    } finally {
+      setLoadingAi(false);
+    }
+  }
+
+  async function runAiConvert(overrideRegionId?: string) {
+    const regionIdToConvert = overrideRegionId ?? selectedRegionId;
+    if (sourceType === "url" && !regionIdToConvert) {
+      throw new Error("Select a content region first.");
+    }
+
+    const response = await fetch("/api/convert-ai", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        engine: "ai",
+        stage: "convert",
+        sourceType,
+        source,
+        outputFormat,
+        selectedRegionId: sourceType === "url" ? regionIdToConvert : undefined,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error ?? "AI conversion failed.");
+    }
+
+    const conversion = payload as AiConversionResponse;
+    const resolvedMarkdown = conversion.markdown ?? "";
+    const resolvedJson = conversion.json ?? null;
+    setMarkdown(resolvedMarkdown);
+    setJson(resolvedJson);
+    const mergedWarnings = [...(conversion.report.warnings ?? []), ...(conversion.aiWarnings ?? [])];
+    setReport({ ...conversion.report, warnings: mergedWarnings });
+    setOutputSourceType(conversion.meta.sourceType);
+    setTitle(
+      conversion.selectedRegionLabel
+        ? `${conversion.meta?.title ?? ""} — ${conversion.selectedRegionLabel} (AI)`
+        : `${conversion.meta?.title ?? ""} (AI)`,
+    );
+
+    const baseMarkdown = conversion.markdown ?? conversion.json?.markdown ?? "";
+    const heading = firstHeadingFromMarkdown(baseMarkdown);
+    const itemTitle = plainTitle(heading || conversion.meta?.title || "Untitled AI conversion");
+    const historyItem: SharedHistoryItem = {
+      id:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      createdAt: new Date().toISOString(),
+      sourceType,
+      outputFormat,
+      title: itemTitle,
+      preview: conversionPreview(baseMarkdown),
+      markdown: conversion.markdown,
+      json: conversion.json,
+      report: { ...conversion.report, warnings: mergedWarnings },
+      meta: conversion.meta,
+    };
+    setHistoryItems((previous) =>
+      [historyItem, ...previous].slice(0, SHARED_HISTORY_MAX_ITEMS),
+    );
+  }
+
+  async function handleRegionConvert(regionId: string) {
+    if (loading || loadingAi) return;
+    setSelectedRegionId(regionId);
+    setLoadingAi(true);
+    setError("");
+    try {
+      await runAiConvert(regionId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unexpected error.";
+      setError(message);
+    } finally {
+      setLoadingAi(false);
     }
   }
 
@@ -653,13 +771,20 @@ export default function Home() {
           outputFormat={outputFormat}
           setOutputFormat={setOutputFormat}
           onConvert={handleConvert}
+          onConvertWithAi={handleConvertWithAi}
           regionOptions={detectedRegions}
           selectedRegionId={selectedRegionId}
           onSelectRegion={setSelectedRegionId}
+          onRegionConvert={handleRegionConvert}
           showRegionChooser={showRegionChooser}
+          regionChooserLabel={regionChooserLabel}
           convertButtonLabel={convertButtonLabel}
           loadingButtonLabel={loadingButtonLabel}
+          convertWithAiButtonLabel={convertWithAiButtonLabel}
+          loadingAiButtonLabel={loadingAiButtonLabel}
           loading={loading}
+          loadingAi={loadingAi}
+          disableActions={loading || loadingAi}
         />
         <OutputPane
           markdown={markdown}

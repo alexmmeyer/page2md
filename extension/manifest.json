@@ -26,5 +26,6 @@
       "run_at": "document_start"
     }
   ],
+  "host_permissions": ["https://amm-page2md.vercel.app/*", "http://localhost:3000/*"],
   "permissions": ["activeTab", "scripting", "storage"]
 }

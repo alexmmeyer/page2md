@@ -287,6 +287,31 @@ a:visited {
   cursor: pointer;
 }
 
+.convertButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.convertButtons .convertButton {
+  flex: 1;
+}
+
+.convertButtonSecondary {
+  background: #1f2733;
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+}
+
+.convertButtonSecondary .buttonSpinner {
+  border-color: rgba(201, 209, 217, 0.25);
+  border-top-color: rgba(201, 209, 217, 0.95);
+}
+
+.privacyHint {
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .convertButtonContent {
   display: inline-flex;
   align-items: center;
@@ -313,51 +338,82 @@ a:visited {
   border: 1px solid var(--panel-border);
   border-radius: 10px;
   background: #0f1620;
-  padding: 10px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.regionOptions {
+.regionPickerHeading {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.regionTiles {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 220px;
+  gap: 6px;
+  max-height: 260px;
   overflow: auto;
 }
 
-.regionOption {
+.regionTile {
   width: 100%;
   border: 1px solid var(--panel-border);
   border-radius: 10px;
   background: transparent;
   color: var(--text);
   text-align: left;
-  padding: 8px 10px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
 }
 
-.regionOption:hover {
+.regionTile:hover:not(:disabled) {
   border-color: var(--accent);
 }
 
-.regionOption.active {
+.regionTile.active {
   border-color: var(--accent);
-  background: rgba(88, 166, 255, 0.12);
+  background: rgba(88, 166, 255, 0.10);
 }
 
-.regionOptionTitle {
+.regionTile:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.regionTileHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.regionTileTitle {
   font-weight: 600;
   font-size: 0.88rem;
+  line-height: 1.3;
 }
 
-.regionOptionMeta {
+.regionTileChars {
+  flex-shrink: 0;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.75rem;
+}
+
+.regionTileDesc {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 @keyframes buttonSpinnerSpin {

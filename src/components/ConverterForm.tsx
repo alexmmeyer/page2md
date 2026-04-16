@@ -15,13 +15,20 @@ interface ConverterFormProps {
   outputFormat: OutputFormat;
   setOutputFormat: (value: OutputFormat) => void;
   onConvert: () => void;
+  onConvertWithAi: () => void;
   regionOptions: ExtractionRegion[];
   selectedRegionId: string | null;
   onSelectRegion: (regionId: string) => void;
+  onRegionConvert: (regionId: string) => void;
   showRegionChooser: boolean;
+  regionChooserLabel?: string;
   convertButtonLabel: string;
   loadingButtonLabel?: string;
+  convertWithAiButtonLabel?: string;
+  loadingAiButtonLabel?: string;
   loading: boolean;
+  loadingAi: boolean;
+  disableActions?: boolean;
 }
 
 export function ConverterForm({
@@ -32,13 +39,20 @@ export function ConverterForm({
   outputFormat,
   setOutputFormat,
   onConvert,
+  onConvertWithAi,
   regionOptions,
   selectedRegionId,
   onSelectRegion,
+  onRegionConvert,
   showRegionChooser,
+  regionChooserLabel,
   convertButtonLabel,
   loadingButtonLabel,
+  convertWithAiButtonLabel,
+  loadingAiButtonLabel,
   loading,
+  loadingAi,
+  disableActions,
 }: ConverterFormProps) {
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const htmlInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -169,7 +183,7 @@ export function ConverterForm({
             placeholder="https://example.com/docs"
             onChange={(event) => setSource(event.target.value)}
             onKeyDown={(event) => {
-              if (isSubmitKey(event.key) && !loading && hasSource) {
+              if (isSubmitKey(event.key) && !loading && !loadingAi && hasSource) {
                 event.preventDefault();
                 onConvert();
               }
@@ -186,7 +200,7 @@ export function ConverterForm({
             placeholder="Paste full page HTML here, or upload an .html file below..."
             onChange={(event) => setSource(event.target.value)}
             onKeyDown={(event) => {
-              if (isSubmitKey(event.key) && !loading && hasSource) {
+              if (isSubmitKey(event.key) && !loading && !loadingAi && hasSource) {
                 event.preventDefault();
                 onConvert();
               }
@@ -225,7 +239,7 @@ export function ConverterForm({
               });
             }}
             onKeyDown={(event) => {
-              if (isSubmitKey(event.key) && !event.shiftKey && !loading && hasSource) {
+              if (isSubmitKey(event.key) && !event.shiftKey && !loading && !loadingAi && hasSource) {
                 event.preventDefault();
                 onConvert();
               }
@@ -233,30 +247,6 @@ export function ConverterForm({
           />
         </div>
       )}
-
-      {showRegionChooser ? (
-        <div className="regionPicker" role="group" aria-label="Detected content regions">
-          <p className="fieldLabel">Detected regions</p>
-          <div className="regionOptions">
-            {regionOptions.map((region) => {
-              const isActive = selectedRegionId === region.id;
-              const summary = `${Math.round(region.score)} score · ${region.textLength.toLocaleString()} chars`;
-              return (
-                <button
-                  key={region.id}
-                  type="button"
-                  className={isActive ? "regionOption active" : "regionOption"}
-                  onClick={() => onSelectRegion(region.id)}
-                  aria-pressed={isActive}
-                >
-                  <span className="regionOptionTitle">{region.label}</span>
-                  <span className="regionOptionMeta">{summary}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
 
       <div className="row">
         <label className="fieldLabel" htmlFor="outputFormat">
@@ -273,24 +263,75 @@ export function ConverterForm({
         </select>
       </div>
 
-      <button
-        type="button"
-        className="convertButton"
-        onClick={onConvert}
-        onKeyDown={(event) => {
-          if (isSubmitKey(event.key) && !loading) {
-            event.preventDefault();
-            onConvert();
-          }
-        }}
-        disabled={loading}
-        aria-busy={loading}
-      >
-        <span className="convertButtonContent">
-          {loading ? <span className="buttonSpinner" aria-hidden="true" /> : null}
-          <span>{loading ? (loadingButtonLabel ?? "Converting...") : convertButtonLabel}</span>
-        </span>
-      </button>
+      <div className="convertButtons">
+        <button
+          type="button"
+          className="convertButton"
+          onClick={onConvert}
+          onKeyDown={(event) => {
+            if (isSubmitKey(event.key) && !loading && !loadingAi) {
+              event.preventDefault();
+              onConvert();
+            }
+          }}
+          disabled={Boolean(disableActions) || loading || loadingAi}
+          aria-busy={loading}
+        >
+          <span className="convertButtonContent">
+            {loading ? <span className="buttonSpinner" aria-hidden="true" /> : null}
+            <span>{loading ? (loadingButtonLabel ?? "Converting...") : convertButtonLabel}</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="convertButton convertButtonSecondary"
+          onClick={onConvertWithAi}
+          disabled={Boolean(disableActions) || loading || loadingAi}
+          aria-busy={loadingAi}
+        >
+          <span className="convertButtonContent">
+            {loadingAi ? <span className="buttonSpinner" aria-hidden="true" /> : null}
+            <span>
+              {loadingAi
+                ? (loadingAiButtonLabel ?? "Converting with AI...")
+                : (convertWithAiButtonLabel ?? "Convert with AI")}
+            </span>
+          </span>
+        </button>
+      </div>
+      <p className="privacyHint muted">
+        AI mode sends selected page content to the server for processing.
+      </p>
+
+      {showRegionChooser ? (
+        <div className="regionPicker" role="group" aria-label={regionChooserLabel}>
+          <p className="regionPickerHeading">{regionChooserLabel}</p>
+          <div className="regionTiles">
+            {regionOptions.map((region) => {
+              const isActive = selectedRegionId === region.id;
+              const charLabel = `${region.textLength.toLocaleString()} chars`;
+              return (
+                <button
+                  key={region.id}
+                  type="button"
+                  className={isActive ? "regionTile active" : "regionTile"}
+                  onClick={() => onRegionConvert(region.id)}
+                  disabled={loadingAi}
+                  aria-pressed={isActive}
+                >
+                  <span className="regionTileHeader">
+                    <span className="regionTileTitle">{region.label}</span>
+                    <span className="regionTileChars">{charLabel}</span>
+                  </span>
+                  {region.description ? (
+                    <span className="regionTileDesc">{region.description}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
