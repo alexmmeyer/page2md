@@ -115,7 +115,7 @@ export function ConverterForm({
   }, [source, sourceType]);
 
   return (
-    <section className="panel">
+    <section className="panel converterPanel">
       <div className="outputHeader">
         <div>
           <h2>Input</h2>
@@ -304,9 +304,15 @@ export function ConverterForm({
       </p>
 
       {showRegionChooser ? (
-        <div className="regionPicker" role="group" aria-label={regionChooserLabel}>
-          <p className="regionPickerHeading">{regionChooserLabel}</p>
-          <div className="regionTiles">
+        <div className="regionPicker">
+          <p className="regionPickerHeading" id="page2md-region-chooser-label">
+            {regionChooserLabel}
+          </p>
+          <div
+            className="regionTiles"
+            role="group"
+            aria-labelledby="page2md-region-chooser-label"
+          >
             {regionOptions.map((region) => {
               const isActive = selectedRegionId === region.id;
               const charLabel = `${region.textLength.toLocaleString()} chars`;

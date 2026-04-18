@@ -134,6 +134,12 @@ a:visited {
   min-width: 0;
 }
 
+@media (min-width: 1001px) {
+  .grid {
+    grid-template-rows: minmax(0, 1fr);
+  }
+}
+
 .panel {
   border: 1px solid var(--panel-border);
   background: linear-gradient(180deg, #131a24 0%, var(--panel) 100%);
@@ -334,14 +340,17 @@ a:visited {
   cursor: not-allowed;
 }
 
+.converterPanel > :not(.regionPicker) {
+  flex-shrink: 0;
+}
+
 .regionPicker {
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  background: #0f1620;
-  padding: 12px;
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .regionPickerHeading {
@@ -354,7 +363,8 @@ a:visited {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 260px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
 }
 
