@@ -8,6 +8,8 @@ import type { AiConversionResponse, ExtractionRegion } from "@/lib/types/convers
 
 export const runtime = "nodejs";
 
+const IS_DEV = process.env.NODE_ENV === "development";
+
 const preDetectedRegionSchema: z.ZodType<ExtractionRegion> = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -51,6 +53,30 @@ export async function POST(request: Request) {
       }
     }
 
+    if (IS_DEV) {
+      const sourceLabel =
+        payload.sourceType === "url"
+          ? payload.source
+          : payload.sourceType === "paste"
+            ? `(pasted text, ${payload.source.length} chars)`
+            : payload.sourceType === "html"
+              ? `(pasted HTML, ${payload.source.length} chars)`
+              : `(tab)`;
+      if (payload.stage === "detect") {
+        console.log(`\n[page2md] ▶ User triggered "Convert with AI"`);
+        console.log(`[page2md]   stage=detect  sourceType=${payload.sourceType}  source=${sourceLabel}`);
+        const visionFlow = payload.sourceType === "url" || payload.sourceType === "html";
+        console.log(`[page2md]   detection flow: ${visionFlow ? "vision (screenshot + DOM walker)" : "legacy (heuristic candidates)"}`);
+        if (payload.preDetectedRegions?.length) {
+          console.log(`[page2md]   pre-detected regions from extension: ${payload.preDetectedRegions.length}`);
+        }
+      } else {
+        console.log(`\n[page2md] ▶ User selected a region — converting to markdown`);
+        console.log(`[page2md]   stage=convert  sourceType=${payload.sourceType}  source=${sourceLabel}`);
+        console.log(`[page2md]   selectedRegionId=${payload.selectedRegionId ?? "(none)"}  htmlProvided=${Boolean(payload.selectedRegionHtml)}`);
+      }
+    }
+
     if (payload.stage === "detect") {
       const detected = await detectRegionsWithAi({
         sourceType: payload.sourceType,
@@ -59,6 +85,9 @@ export async function POST(request: Request) {
         preDetectedRegions: payload.preDetectedRegions,
         titleHint: payload.titleHint,
       });
+      if (IS_DEV) {
+        console.log(`[page2md]   detect complete — ${detected.aiRegions.length} region(s) surfaced to user${detected.fallbackUsed ? "  ⚠ fallback used" : ""}`);
+      }
       const response: AiConversionResponse = {
         engine: "ai",
         stage: "detect",
@@ -89,6 +118,9 @@ export async function POST(request: Request) {
       titleHint: payload.titleHint,
     });
     const markdown = markdownWithYamlFrontmatter(converted.markdownBody, converted.meta);
+    if (IS_DEV) {
+      console.log(`[page2md]   convert complete — ${converted.markdownBody.length} chars of markdown${converted.fallbackUsed ? "  ⚠ fallback used" : ""}`);
+    }
     const response: AiConversionResponse = {
       engine: "ai",
       stage: "convert",

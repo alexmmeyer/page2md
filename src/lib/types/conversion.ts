@@ -27,6 +27,47 @@ export interface ExtractionRegion {
   score: number;
 }
 
+/**
+ * A visually-rich region candidate produced by the vision-aware extractor.
+ * The AI receives these along with a full-page screenshot and decides which
+ * to surface to the user.
+ */
+export interface VisibleRegionCandidate {
+  /** Stable index used to address the candidate in AI responses. */
+  ref: string;
+  /** CSS-ish selector path for re-finding the element on a fresh extraction. */
+  selectorPath: string;
+  tag: string;
+  role?: string;
+  ariaLabel?: string;
+  className?: string;
+  bbox: { x: number; y: number; width: number; height: number };
+  bgColor: string;
+  textColor: string;
+  borderTop: string;
+  borderLeft: string;
+  fontFamily: string;
+  fontSize: string;
+  fontWeight: string;
+  position: string;
+  depth: number;
+  textLength: number;
+  textPreview: string;
+  linkCount: number;
+  linkDensity: number;
+  /** Refs of immediate child candidates (for nesting awareness). */
+  childRefs: string[];
+}
+
+export interface AiVisionDetectInput {
+  title: string;
+  candidates: VisibleRegionCandidate[];
+  screenshotPngBase64: string;
+  viewport: { width: number; height: number };
+  fullPageHeight: number;
+  report: ExtractionReport;
+}
+
 export interface AiRegionCandidate {
   id: string;
   label: string;
