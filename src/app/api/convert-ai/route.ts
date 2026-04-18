@@ -88,6 +88,11 @@ export async function POST(request: Request) {
       if (IS_DEV) {
         console.log(`[page2md]   detect complete — ${detected.aiRegions.length} region(s) surfaced to user${detected.fallbackUsed ? "  ⚠ fallback used" : ""}`);
       }
+      const defaultSourceId = detected.defaultRegionId;
+      const aiRegionForDefault =
+        defaultSourceId != null && defaultSourceId !== ""
+          ? detected.aiRegions.find((r) => r.sourceRegionId === defaultSourceId)
+          : undefined;
       const response: AiConversionResponse = {
         engine: "ai",
         stage: "detect",
@@ -99,8 +104,8 @@ export async function POST(request: Request) {
         defaultRegionId: detected.defaultRegionId,
         selectedRegionId: detected.selectedRegionId,
         selectedRegionLabel: detected.selectedRegionLabel,
-        selectedAiRegionId: detected.aiRegions[0]?.id,
-        selectedAiRegionLabel: detected.aiRegions[0]?.label,
+        selectedAiRegionId: aiRegionForDefault?.id ?? detected.aiRegions[0]?.id,
+        selectedAiRegionLabel: aiRegionForDefault?.label ?? detected.aiRegions[0]?.label,
         model: detected.model,
         aiWarnings: detected.aiWarnings,
         fallbackUsed: detected.fallbackUsed,

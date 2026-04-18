@@ -146,6 +146,19 @@ function normalizeSourceForMeta(sourceType: ConversionSourceType, source: string
   return source;
 }
 
+/** Display order for AI-surfaced regions: largest text first. */
+function sortAiRegionsBySourceTextLengthDesc(
+  aiRegions: AiRegionCandidate[],
+  sourceRegions: ExtractionRegion[],
+): AiRegionCandidate[] {
+  const lengthById = new Map(sourceRegions.map((r) => [r.id, r.textLength]));
+  return aiRegions.slice().sort((a, b) => {
+    const lb = lengthById.get(b.sourceRegionId ?? "") ?? 0;
+    const la = lengthById.get(a.sourceRegionId ?? "") ?? 0;
+    return lb - la;
+  });
+}
+
 function clampRegionCandidates(regions: ExtractionRegion[]): ExtractionRegion[] {
   const byScore = regions.slice().sort((a, b) => b.score - a.score);
   const preserveKinds: ExtractionRegionKind[] = ["toc", "navigation", "sidebar"];
@@ -639,6 +652,12 @@ async function detectRegionsVision(input: DetectAiInput): Promise<DetectAiResult
     .filter((r): r is ExtractionRegion => r !== null);
 
   const top = aiRegions[0];
+  const sortedAiRegions = sortAiRegionsBySourceTextLengthDesc(aiRegions, regions);
+  const regionById = new Map(regions.map((r) => [r.id, r]));
+  const sortedRegions = sortedAiRegions
+    .map((ai) => regionById.get(ai.sourceRegionId ?? ""))
+    .filter((r): r is ExtractionRegion => r !== undefined);
+
   const meta: ConversionMeta = {
     sourceType: input.sourceType,
     source: normalizedSource,
@@ -651,8 +670,8 @@ async function detectRegionsVision(input: DetectAiInput): Promise<DetectAiResult
   return {
     meta,
     report: extracted.report,
-    regions,
-    aiRegions,
+    regions: sortedRegions,
+    aiRegions: sortedAiRegions,
     defaultRegionId: top?.sourceRegionId,
     selectedRegionId: top?.sourceRegionId,
     selectedRegionLabel: top?.label,
@@ -852,6 +871,7 @@ async function detectRegionsLegacy(input: DetectAiInput): Promise<DetectAiResult
   }
 
   const top = aiRegions[0];
+  const sortedAiRegions = sortAiRegionsBySourceTextLengthDesc(aiRegions, regions);
   const sourceRegionLabel = regions.find((r) => r.id === top?.sourceRegionId)?.label;
   const meta: ConversionMeta = {
     sourceType: input.sourceType,
@@ -865,7 +885,7 @@ async function detectRegionsLegacy(input: DetectAiInput): Promise<DetectAiResult
     meta,
     report,
     regions,
-    aiRegions,
+    aiRegions: sortedAiRegions,
     defaultRegionId: top?.sourceRegionId,
     selectedRegionId: top?.sourceRegionId,
     selectedRegionLabel: sourceRegionLabel ?? top?.label,
