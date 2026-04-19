@@ -22,6 +22,10 @@ export interface SharedHistoryItem {
   json?: ConversionJsonOutput;
   report: ExtractionReport;
   meta: ConversionMeta;
+  /** Present when this entry was produced by an AI conversion flow. */
+  fromAi?: boolean;
+  /** When an AI conversion targeted a page region, human-readable region title for history preview. */
+  aiContentRegionTitle?: string;
 }
 
 export interface SharedHistoryState {

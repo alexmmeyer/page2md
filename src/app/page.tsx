@@ -430,6 +430,21 @@ export default function Home() {
     }));
   }
 
+  function clearConversionOutput() {
+    setMarkdown("");
+    setJson(null);
+    setReport(null);
+    setTitle("");
+    setOutputSourceType(null);
+  }
+
+  function clearContentRegions() {
+    setDetectedRegions([]);
+    setSelectedRegionId(null);
+    setDetectedUrlSource(null);
+    setRegionSelectionEngine(null);
+  }
+
   async function handleConvert() {
     if (loading || loadingAi) {
       return;
@@ -441,6 +456,8 @@ export default function Home() {
 
     setLoading(true);
     setError("");
+    clearConversionOutput();
+    clearContentRegions();
     try {
       const response = await fetch("/api/convert", {
         method: "POST",
@@ -474,8 +491,11 @@ export default function Home() {
       );
 
       const baseMarkdown = conversion.markdown ?? conversion.json?.markdown ?? "";
-      const heading = firstHeadingFromMarkdown(baseMarkdown);
-      const itemTitle = plainTitle(heading || conversion.meta?.title || "Untitled conversion");
+      const itemTitle = plainTitle(
+        (conversion.meta?.title ?? "").trim() ||
+          firstHeadingFromMarkdown(baseMarkdown) ||
+          "Untitled conversion",
+      );
       const historyItem: SharedHistoryItem = {
         id:
           typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -520,6 +540,8 @@ export default function Home() {
           detectedUrlSource !== source ||
           regionSelectionEngine !== "ai")
       ) {
+        clearConversionOutput();
+        clearContentRegions();
         const detectResponse = await fetch("/api/convert-ai", {
           method: "POST",
           headers: {
@@ -569,6 +591,11 @@ export default function Home() {
         setOutputSourceType(detection.meta.sourceType);
         setReport(detection.report);
         setTitle(detection.meta.title || "Select a region to convert");
+
+        if (nextRegions.length === 1) {
+          await runAiConvert(nextRegions[0].id);
+          return;
+        }
         return;
       }
 
@@ -587,6 +614,14 @@ export default function Home() {
       throw new Error("Select a content region first.");
     }
 
+    const preDetectedRegionsForConvert =
+      sourceType === "url" && detectedRegions.length > 0 ? detectedRegions : undefined;
+
+    clearConversionOutput();
+    if (overrideRegionId === undefined) {
+      clearContentRegions();
+    }
+
     const response = await fetch("/api/convert-ai", {
       method: "POST",
       headers: {
@@ -599,6 +634,7 @@ export default function Home() {
         source,
         outputFormat,
         selectedRegionId: sourceType === "url" ? regionIdToConvert : undefined,
+        preDetectedRegions: preDetectedRegionsForConvert,
       }),
     });
     const payload = await response.json();
@@ -621,8 +657,15 @@ export default function Home() {
     );
 
     const baseMarkdown = conversion.markdown ?? conversion.json?.markdown ?? "";
-    const heading = firstHeadingFromMarkdown(baseMarkdown);
-    const itemTitle = plainTitle(heading || conversion.meta?.title || "Untitled AI conversion");
+    const itemTitle = plainTitle(
+      (conversion.meta?.title ?? "").trim() ||
+        firstHeadingFromMarkdown(baseMarkdown) ||
+        "Untitled conversion",
+    );
+    const regionLabel =
+      typeof conversion.selectedRegionLabel === "string" && conversion.selectedRegionLabel.trim()
+        ? conversion.selectedRegionLabel.trim()
+        : undefined;
     const historyItem: SharedHistoryItem = {
       id:
         typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -637,6 +680,8 @@ export default function Home() {
       json: conversion.json,
       report: { ...conversion.report, warnings: mergedWarnings },
       meta: conversion.meta,
+      fromAi: true,
+      ...(regionLabel ? { aiContentRegionTitle: regionLabel } : {}),
     };
     setHistoryItems((previous) =>
       [historyItem, ...previous].slice(0, SHARED_HISTORY_MAX_ITEMS),

@@ -974,6 +974,13 @@ export async function convertRegionWithAi(input: ConvertAiInput): Promise<Conver
     }
   }
 
+  const preDetectedRegionLabel = input.preDetectedRegions
+    ?.find((region) => region.id === input.selectedRegionId)
+    ?.label?.trim();
+  if (preDetectedRegionLabel) {
+    selectedRegionLabel = preDetectedRegionLabel;
+  }
+
   // ── Stage 4: Deterministic HTML → Markdown ─────────────────────────────
   // No AI in this step. htmlToMarkdown handles arbitrary HTML size faithfully
   // and cannot hallucinate content, so we never need to truncate.

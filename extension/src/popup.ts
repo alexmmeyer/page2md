@@ -461,13 +461,15 @@ function historyItemMatchesQuery(item: ExtensionHistoryItem, queryLower: string)
   const body = (item.markdown ?? item.json?.markdown ?? "").toLowerCase();
   const sourceLabel = sourceTypeLabel(item.sourceType).toLowerCase();
   const formatLabel = outputFormatLabel(item.outputFormat).toLowerCase();
+  const regionTitle = (item.aiContentRegionTitle ?? "").toLowerCase();
   return (
     dateLabel.includes(queryLower) ||
     iso.includes(queryLower) ||
     title.includes(queryLower) ||
     body.includes(queryLower) ||
     sourceLabel.includes(queryLower) ||
-    formatLabel.includes(queryLower)
+    formatLabel.includes(queryLower) ||
+    regionTitle.includes(queryLower)
   );
 }
 
@@ -506,23 +508,47 @@ function renderHistory() {
     const selectBtn = document.createElement("button");
     selectBtn.type = "button";
     selectBtn.className = "historyTileSelect";
-    selectBtn.innerHTML = `
-      <div class="historyTileMeta">
-        <span class="historyTileMetaDate"></span>
-        <span class="historyTileMetaFlow"></span>
-      </div>
-      <h3 class="historyTileTitle"></h3>
-      <p class="historyTilePreview"></p>
-    `;
-    selectBtn.querySelector(".historyTileMetaDate")!.textContent = formatTimestamp(item.createdAt);
-    (selectBtn.querySelector(".historyTileMetaFlow") as HTMLElement).innerHTML = `
+
+    const meta = document.createElement("div");
+    meta.className = "historyTileMeta";
+    const metaDate = document.createElement("span");
+    metaDate.textContent = formatTimestamp(item.createdAt);
+    const metaFlow = document.createElement("span");
+    metaFlow.className = "historyTileMetaFlow";
+    metaFlow.innerHTML = `
       <span>${sourceTypeLabel(item.sourceType)}</span>
       <span class="historyFlowArrow" aria-hidden="true">→</span>
       <span>${outputFormatLabel(item.outputFormat)}</span>
     `;
-    selectBtn.querySelector(".historyTileTitle")!.textContent = item.title;
-    (selectBtn.querySelector(".historyTilePreview") as HTMLElement).textContent =
-      historyPreviewText(item);
+    meta.append(metaDate, metaFlow);
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "historyTileTitleRow";
+    const titleEl = document.createElement("h3");
+    titleEl.className = "historyTileTitle";
+    titleEl.textContent = item.title;
+    titleRow.appendChild(titleEl);
+    if (item.fromAi) {
+      const badge = document.createElement("span");
+      badge.className = "historyTileAiBadge";
+      badge.title = "Converted with AI";
+      badge.textContent = "AI";
+      titleRow.appendChild(badge);
+    }
+
+    const previewEl = document.createElement("p");
+    previewEl.className = "historyTilePreview";
+    if (item.fromAi && item.aiContentRegionTitle) {
+      const lead = document.createElement("strong");
+      lead.className = "historyTilePreviewLead";
+      lead.textContent = `${item.aiContentRegionTitle}: `;
+      previewEl.appendChild(lead);
+      previewEl.appendChild(document.createTextNode(historyPreviewText(item)));
+    } else {
+      previewEl.textContent = historyPreviewText(item);
+    }
+
+    selectBtn.append(meta, titleRow, previewEl);
     selectBtn.addEventListener("click", () => {
       selectBtn.blur();
       clearRegionSelection();
@@ -683,8 +709,11 @@ async function handleConvertSelectedRegion(regionId: string) {
     const fullMarkdown = markdownWithYamlFrontmatter(markdownBody, meta);
 
     const baseForTitle = fullMarkdown;
-    const heading = firstHeadingFromMarkdown(baseForTitle);
-    const itemTitle = plainTitle(heading || meta.title || "Untitled conversion");
+    const itemTitle = plainTitle(
+      (meta.title ?? "").trim() ||
+        firstHeadingFromMarkdown(baseForTitle) ||
+        "Untitled conversion",
+    );
 
     const historyItem: ExtensionHistoryItem = {
       id:
@@ -807,6 +836,9 @@ async function handleDetectRegionsWithAi() {
     );
     renderRegionSelection();
     showTab("convert");
+    if (rankedRegions.length === 1) {
+      await handleConvertSelectedRegionWithAi(rankedRegions[0].id);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : "AI detection failed.";
     setError(message);
@@ -873,10 +905,16 @@ async function handleConvertSelectedRegionWithAi(regionId: string) {
     }
 
     const baseForTitle = finalMarkdown;
-    const heading = firstHeadingFromMarkdown(baseForTitle);
     const itemTitle = plainTitle(
-      heading || conversion.meta.title || extracted.title || "Untitled AI conversion",
+      (conversion.meta.title ?? "").trim() ||
+        firstHeadingFromMarkdown(baseForTitle) ||
+        (extracted.title ?? "").trim() ||
+        "Untitled conversion",
     );
+    const regionLabel =
+      typeof conversion.selectedRegionLabel === "string" && conversion.selectedRegionLabel.trim()
+        ? conversion.selectedRegionLabel.trim()
+        : undefined;
     const historyItem: ExtensionHistoryItem = {
       id:
         typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -896,6 +934,8 @@ async function handleConvertSelectedRegionWithAi(regionId: string) {
         ],
       },
       meta: conversion.meta,
+      fromAi: true,
+      ...(regionLabel ? { aiContentRegionTitle: regionLabel } : {}),
     };
 
     state.items = [historyItem, ...state.items].slice(0, SHARED_HISTORY_MAX_ITEMS);

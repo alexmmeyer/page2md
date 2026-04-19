@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import type {
   ConversionJsonOutput,
   ConversionSourceType,
@@ -19,6 +21,8 @@ export interface HistoryItem {
   json?: ConversionJsonOutput;
   report: ExtractionReport;
   meta: ConversionMeta;
+  fromAi?: boolean;
+  aiContentRegionTitle?: string;
 }
 
 function sourceTypeLabel(sourceType: ConversionSourceType): string {
@@ -70,6 +74,19 @@ function historyPreviewText(item: HistoryItem): string {
   }
 
   return item.preview || "(No preview text available)";
+}
+
+function historyPreviewBody(item: HistoryItem): ReactNode {
+  const text = historyPreviewText(item);
+  if (item.fromAi && item.aiContentRegionTitle) {
+    return (
+      <>
+        <strong className="historyTilePreviewLead">{item.aiContentRegionTitle}: </strong>
+        {text}
+      </>
+    );
+  }
+  return text;
 }
 
 function formatTimestamp(value: string): string {
@@ -160,8 +177,15 @@ export function HistoryPane({ items, onSelect, onDeleteItem, onClearHistory }: H
                     <span>{outputFormatLabel(item.outputFormat)}</span>
                   </span>
                 </div>
-                <h3 className="historyTileTitle">{item.title}</h3>
-                <p className="historyTilePreview">{historyPreviewText(item)}</p>
+                <div className="historyTileTitleRow">
+                  <h3 className="historyTileTitle">{item.title}</h3>
+                  {item.fromAi ? (
+                    <span className="historyTileAiBadge" title="Converted with AI">
+                      AI
+                    </span>
+                  ) : null}
+                </div>
+                <p className="historyTilePreview">{historyPreviewBody(item)}</p>
               </button>
               <button
                 type="button"
