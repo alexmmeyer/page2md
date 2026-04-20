@@ -353,20 +353,110 @@ function setActionButtonsDisabled(disabled: boolean) {
   el.convertAiBtn.disabled = disabled;
 }
 
-function resolveAiApiBase(tabUrl: string): string {
+function resolveAiApiBases(tabUrl: string): string[] {
   const fallback = "https://amm-page2md.vercel.app";
+  const local = "http://localhost:3000";
+  const ordered = new Set<string>();
+
   try {
     const parsed = new URL(tabUrl);
-    if (
-      parsed.origin === "http://localhost:3000" ||
-      parsed.origin === "https://amm-page2md.vercel.app"
-    ) {
-      return parsed.origin;
+    if (parsed.origin === local || parsed.origin === fallback) {
+      ordered.add(parsed.origin);
     }
   } catch {
     // Ignore parse errors and use default.
   }
-  return fallback;
+
+  // Prefer deployed backend first for normal browsing flows.
+  ordered.add(fallback);
+  // Localhost retry allows extension AI during active local development.
+  ordered.add(local);
+  return Array.from(ordered);
+}
+
+async function parseJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const contentType = response.headers.get("content-type") ?? "";
+  const rawBody = await response.text();
+
+  let parsedBody: unknown = null;
+  if (rawBody.trim().length > 0 && contentType.toLowerCase().includes("application/json")) {
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch {
+      // Preserve a readable error below if JSON parsing fails.
+    }
+  }
+
+  if (!response.ok) {
+    const apiError =
+      typeof parsedBody === "object" &&
+      parsedBody !== null &&
+      "error" in parsedBody &&
+      typeof (parsedBody as { error?: unknown }).error === "string"
+        ? (parsedBody as { error: string }).error
+        : null;
+    const detail = rawBody.trim();
+    if (apiError) {
+      throw new Error(apiError);
+    }
+    if (detail.startsWith("<!DOCTYPE") || detail.startsWith("<html")) {
+      throw new Error(
+        `${fallbackMessage} (received HTML from API: ${response.status} ${response.statusText}).`,
+      );
+    }
+    throw new Error(
+      detail || `${fallbackMessage} (${response.status} ${response.statusText}).`,
+    );
+  }
+
+  if (parsedBody == null) {
+    if (rawBody.trim().startsWith("<!DOCTYPE") || rawBody.trim().startsWith("<html")) {
+      throw new Error(
+        `${fallbackMessage} (API returned HTML instead of JSON). Check the API base URL.`,
+      );
+    }
+    throw new Error(`${fallbackMessage} (API returned an invalid response).`);
+  }
+
+  return parsedBody as T;
+}
+
+async function postAiApi(
+  tabUrl: string,
+  payload: Record<string, unknown>,
+  fallbackMessage: string,
+): Promise<AiConversionResponse> {
+  const apiBases = resolveAiApiBases(tabUrl);
+  let lastError: Error | null = null;
+  const body = JSON.stringify(payload);
+
+  for (const apiBase of apiBases) {
+    try {
+      const response = await fetch(`${apiBase}/api/convert-ai`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body,
+      });
+      return await parseJsonResponse<AiConversionResponse>(response, fallbackMessage);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : fallbackMessage;
+      lastError = err instanceof Error ? err : new Error(message);
+      const mayRetry =
+        message.includes("404") ||
+        message.includes("Failed to fetch") ||
+        message.includes("NetworkError");
+      if (!mayRetry) {
+        break;
+      }
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  throw new Error(fallbackMessage);
 }
 
 function clearRegionSelection() {
@@ -771,13 +861,9 @@ async function handleDetectRegionsWithAi() {
       return;
     }
 
-    const apiBase = resolveAiApiBase(tab.url ?? "");
-    const detectResponse = await fetch(`${apiBase}/api/convert-ai`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const detection = await postAiApi(
+      tab.url ?? "",
+      {
         engine: "ai",
         stage: "detect",
         sourceType: "tab",
@@ -785,13 +871,9 @@ async function handleDetectRegionsWithAi() {
         outputFormat: "markdown",
         titleHint: extracted.title,
         preDetectedRegions: extracted.regions,
-      }),
-    });
-    const detectPayload = await detectResponse.json();
-    if (!detectResponse.ok) {
-      throw new Error(detectPayload.error ?? "AI region detection failed.");
-    }
-    const detection = detectPayload as AiConversionResponse;
+      },
+      "AI region detection failed",
+    );
     const aiRegions = detection.aiRegions ?? [];
     if (aiRegions.length === 0) {
       throw new Error("AI did not return any useful regions.");
@@ -876,13 +958,9 @@ async function handleConvertSelectedRegionWithAi(regionId: string) {
       throw new Error("No content was extracted for the selected AI region.");
     }
 
-    const apiBase = resolveAiApiBase(tab.url ?? pendingRegionSelection.tabUrl);
-    const convertResponse = await fetch(`${apiBase}/api/convert-ai`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const conversion = await postAiApi(
+      tab.url ?? pendingRegionSelection.tabUrl,
+      {
         engine: "ai",
         stage: "convert",
         sourceType: "tab",
@@ -892,13 +970,9 @@ async function handleConvertSelectedRegionWithAi(regionId: string) {
         selectedRegionHtml: extracted.html,
         titleHint: extracted.title,
         preDetectedRegions: pendingRegionSelection.regions,
-      }),
-    });
-    const convertPayload = await convertResponse.json();
-    if (!convertResponse.ok) {
-      throw new Error(convertPayload.error ?? "AI conversion failed.");
-    }
-    const conversion = convertPayload as AiConversionResponse;
+      },
+      "AI conversion failed",
+    );
     const finalMarkdown = conversion.markdown ?? "";
     if (!finalMarkdown.trim()) {
       throw new Error("AI conversion returned empty markdown.");

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
@@ -89,6 +90,32 @@ function historyPreviewBody(item: HistoryItem): ReactNode {
   return text;
 }
 
+function historyItemMatchesQuery(item: HistoryItem, queryLower: string): boolean {
+  if (!queryLower) {
+    return true;
+  }
+  const dateLabel = formatTimestamp(item.createdAt).toLowerCase();
+  const iso = item.createdAt.toLowerCase();
+  const title = item.title.toLowerCase();
+  const body = (item.markdown ?? item.json?.markdown ?? "").toLowerCase();
+  const sourceLabel = sourceTypeLabel(item.sourceType).toLowerCase();
+  const formatLabel = outputFormatLabel(item.outputFormat).toLowerCase();
+  const regionTitle = (item.aiContentRegionTitle ?? "").toLowerCase();
+  const preview = historyPreviewText(item).toLowerCase();
+  const metaTitle = (item.meta?.title ?? "").toLowerCase();
+  return (
+    dateLabel.includes(queryLower) ||
+    iso.includes(queryLower) ||
+    title.includes(queryLower) ||
+    body.includes(queryLower) ||
+    sourceLabel.includes(queryLower) ||
+    formatLabel.includes(queryLower) ||
+    regionTitle.includes(queryLower) ||
+    preview.includes(queryLower) ||
+    metaTitle.includes(queryLower)
+  );
+}
+
 function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -134,6 +161,22 @@ interface HistoryPaneProps {
 }
 
 export function HistoryPane({ items, onSelect, onDeleteItem, onClearHistory }: HistoryPaneProps) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const queryLower = searchQuery.trim().toLowerCase();
+
+  const filteredItems = useMemo(() => {
+    if (!queryLower) {
+      return items;
+    }
+    return items.filter((item) => historyItemMatchesQuery(item, queryLower));
+  }, [items, queryLower]);
+
+  useEffect(() => {
+    if (items.length === 0) {
+      setSearchQuery("");
+    }
+  }, [items.length]);
+
   function confirmDeleteOne() {
     return window.confirm(
       "Remove this conversion from saved history? This cannot be undone.",
@@ -153,11 +196,29 @@ export function HistoryPane({ items, onSelect, onDeleteItem, onClearHistory }: H
         </div>
       </div>
 
+      <label className="historySearchLabel" htmlFor="page2md-history-search">
+        Search history
+      </label>
+      <input
+        id="page2md-history-search"
+        className="historySearch"
+        type="search"
+        placeholder="Search by date, title, or content…"
+        autoComplete="off"
+        spellCheck={false}
+        disabled={items.length === 0}
+        aria-label="Filter history by date, title, or content"
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+      />
+
       <div className="historyList">
         {items.length === 0 ? (
           <p className="muted">No conversions yet.</p>
+        ) : filteredItems.length === 0 ? (
+          <p className="muted">No matching conversions.</p>
         ) : (
-          items.map((item) => (
+          filteredItems.map((item) => (
             <div key={item.id} className="historyTile">
               <button
                 type="button"

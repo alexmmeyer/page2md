@@ -80,6 +80,7 @@ export function ConverterForm({
 
   const hasSource = source.trim().length > 0;
   const isSubmitKey = (key: string) => key === "Enter" || key === "NumpadEnter";
+  const showConvertWithAi = sourceType === "url";
 
   function clearSourceAndFocus() {
     setSource("");
@@ -282,26 +283,30 @@ export function ConverterForm({
             <span>{loading ? (loadingButtonLabel ?? "Converting...") : convertButtonLabel}</span>
           </span>
         </button>
-        <button
-          type="button"
-          className="convertButton convertButtonSecondary"
-          onClick={onConvertWithAi}
-          disabled={Boolean(disableActions) || loading || loadingAi}
-          aria-busy={loadingAi}
-        >
-          <span className="convertButtonContent">
-            {loadingAi ? <span className="buttonSpinner" aria-hidden="true" /> : null}
-            <span>
-              {loadingAi
-                ? (loadingAiButtonLabel ?? "Converting with AI...")
-                : (convertWithAiButtonLabel ?? "Convert with AI")}
+        {showConvertWithAi ? (
+          <button
+            type="button"
+            className="convertButton convertButtonSecondary"
+            onClick={onConvertWithAi}
+            disabled={Boolean(disableActions) || loading || loadingAi}
+            aria-busy={loadingAi}
+          >
+            <span className="convertButtonContent">
+              {loadingAi ? <span className="buttonSpinner" aria-hidden="true" /> : null}
+              <span>
+                {loadingAi
+                  ? (loadingAiButtonLabel ?? "Converting with AI...")
+                  : (convertWithAiButtonLabel ?? "Convert with AI")}
+              </span>
             </span>
-          </span>
-        </button>
+          </button>
+        ) : null}
       </div>
-      <p className="privacyHint muted">
-        AI mode sends selected page content to the server for processing.
-      </p>
+      {showConvertWithAi ? (
+        <p className="privacyHint muted">
+          AI mode sends selected page content to the server for processing.
+        </p>
+      ) : null}
 
       {showRegionChooser ? (
         <div className="regionPicker">
