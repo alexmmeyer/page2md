@@ -1,6 +1,15 @@
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 
+/** Domino's published typings declare `domino` instead of `@mixmark-io/domino`. */
+function dominoCreateDocument(): Document {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createDocument } = require("@mixmark-io/domino") as {
+    createDocument: () => Document;
+  };
+  return createDocument();
+}
+
 const LANGUAGE_CLASS_PATTERN = /\blanguage-([a-z0-9_+-]+)/i;
 const FONT_WEIGHT_BOLD_PATTERN = /font-weight\s*:\s*(bold|bolder|[6-9]00)/i;
 
@@ -172,7 +181,88 @@ function detectLanguage(codeElement: Element | null): string {
   return dataLanguage.toLowerCase();
 }
 
+function fencedCodeMarkdown(language: string, rawCode: string): string {
+  const normalizedCode = rawCode.replace(/\n$/, "");
+  return `\n\n\`\`\`${language}\n${normalizedCode}\n\`\`\`\n\n`;
+}
+
+function isTextOrBrOnly(el: Element): boolean {
+  for (const child of Array.from(el.childNodes)) {
+    if (child.nodeType === 3) {
+      continue;
+    }
+    if (child.nodeType === 1 && (child as Element).nodeName === "BR") {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+function isInsidePre(el: Element | null, stopAt: Element): boolean {
+  let current: Element | null = el;
+  while (current && current !== stopAt) {
+    if (current.nodeName === "PRE") {
+      return true;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
+function elementDepth(el: Element, stopAt: Element): number {
+  let depth = 0;
+  let current: Element | null = el;
+  while (current && current !== stopAt) {
+    depth++;
+    current = current.parentElement;
+  }
+  return depth;
+}
+
+/**
+ * Turndown collapses newlines in block text nodes into spaces before conversion.
+ * Plain-text pastes often arrive as a single &lt;div&gt;...&lt;/div&gt; with literal
+ * line breaks; rewrite those to &lt;pre&gt;&lt;code&gt; so structure survives.
+ */
+function expandCollapsedMultilineTextBlocks(html: string): string {
+  if (!html.includes("\n")) {
+    return html;
+  }
+
+  const doc = dominoCreateDocument();
+  const container = doc.createElement("div");
+  container.innerHTML = html;
+
+  const candidates = Array.from(container.querySelectorAll("div, p")).filter((el) =>
+    !isInsidePre(el, container),
+  );
+  candidates.sort((a, b) => elementDepth(b, container) - elementDepth(a, container));
+
+  for (const el of candidates) {
+    if (el.nodeName !== "DIV" && el.nodeName !== "P") {
+      continue;
+    }
+    if (!isTextOrBrOnly(el)) {
+      continue;
+    }
+    const text = el.textContent ?? "";
+    if (!/\r?\n/.test(text)) {
+      continue;
+    }
+    const pre = doc.createElement("pre");
+    const code = doc.createElement("code");
+    code.textContent = text;
+    pre.appendChild(code);
+    el.parentNode?.replaceChild(pre, el);
+  }
+
+  return container.innerHTML;
+}
+
 export function htmlToMarkdown(html: string): string {
+  const normalizedHtml = expandCollapsedMultilineTextBlocks(html);
+
   const turndown = new TurndownService({
     codeBlockStyle: "fenced",
     headingStyle: "atx",
@@ -204,6 +294,25 @@ export function htmlToMarkdown(html: string): string {
     },
   });
 
+  // Inline <code> with line breaks becomes a single markdown line by default;
+  // treat multiline snippets as fenced blocks instead.
+  turndown.addRule("multilineInlineCodeAsFence", {
+    filter(node) {
+      if (node.nodeName !== "CODE") {
+        return false;
+      }
+      if (node.parentElement?.nodeName === "PRE") {
+        return false;
+      }
+      const text = node.textContent ?? "";
+      return /\r?\n/.test(text);
+    },
+    replacement(_content, node) {
+      const el = node as Element;
+      return fencedCodeMarkdown(detectLanguage(el), el.textContent ?? "");
+    },
+  });
+
   // Preserve fenced code blocks with language labels when detectable.
   turndown.addRule("fencedCodeLanguage", {
     filter(node) {
@@ -216,12 +325,11 @@ export function htmlToMarkdown(html: string): string {
       const codeNode = node.firstElementChild;
       const language = detectLanguage(codeNode);
       const rawCode = codeNode?.textContent ?? node.textContent ?? "";
-      const normalizedCode = rawCode.replace(/\n$/, "");
-      return `\n\n\`\`\`${language}\n${normalizedCode}\n\`\`\`\n\n`;
+      return fencedCodeMarkdown(language, rawCode);
     },
   });
 
-  const markdown = turndown.turndown(html);
+  const markdown = turndown.turndown(normalizedHtml);
   return markdown.replace(/\n{3,}/g, "\n\n").trim();
 }
 
